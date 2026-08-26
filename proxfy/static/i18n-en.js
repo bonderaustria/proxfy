@@ -436,3 +436,24 @@ Object.assign(EN, {
   "Wie viele Gäste gleichzeitig geprüft werden dürfen. Eins ist die sichere Wahl: parallele Wiederherstellungen teilen sich die Bandbreite des Storage, und ist die der Engpass, dauern zwei zusammen genauso lange wie nacheinander. Bei schnellem NVMe lohnt höher. Eine Verringerung greift erst nach einem Neustart des Dienstes.":
     "How many guests may be verified at the same time. One is the safe choice: parallel restores share the storage bandwidth, and if that is the bottleneck, two together take just as long as one after the other. With fast NVMe, higher pays off. Lowering it takes effect after the service restarts.",
 });
+
+// --- Dateien aus einem Backup ------------------------------------------------
+Object.assign(EN, {
+  "Dateien": "Files",
+  "Datei aus einem Backup holen": "Retrieve a file from a backup",
+  "Backup-Stand": "Backup snapshot",
+  "Es wird nichts wiederhergestellt und nichts gestartet. Bei einem Container wird unmittelbar im Dateiarchiv gelesen; bei einer VM schließt Proxmox das Blockabbild kurz mit einer eigenen Hilfsmaschine auf und räumt sie danach selbst wieder ab.":
+    "Nothing is restored and nothing is started. For a container the file archive is read directly; for a VM, Proxmox briefly opens the disk image with a small helper machine of its own and clears it away again afterwards.",
+  "Wähle einen Gast und einen Backup-Stand.": "Pick a guest and a backup snapshot.",
+  "Herunterladen": "Download",
+  "Noch nichts gewählt.": "Nothing selected yet.",
+  "bitte wählen": "please choose",
+  "hier liegt nichts": "nothing here",
+  "Anfang": "Top",
+  "hole die Datei …": "fetching the file …",
+  "Fertig.": "Done.",
+  "Hier kommen Inhalte heraus, keine Prüfergebnisse — Passwortdateien, Datenbanken, Schlüssel. Deshalb nur Super Admin, deshalb das Passwort erneut, und jeder Abruf steht im Journal mit Konto, Gast, Pfad und Zeit.":
+    "What comes out here is content, not verdicts — password files, databases, keys. Hence super admin only, hence the password again, and every retrieval is recorded in the journal with account, guest, path and time.",
+  "Ein Verzeichnis kommt als Archiv. Bei großen Dateien beginnt der Download, sobald das erste Stück da ist — es wird nichts zwischengelagert.":
+    "A directory comes as an archive. For large files the download starts as soon as the first chunk arrives — nothing is buffered in between.",
+});

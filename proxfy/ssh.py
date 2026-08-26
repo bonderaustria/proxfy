@@ -90,6 +90,29 @@ class Host:
             return self
         return _NodeHost(self, node)
 
+    def stream(self, argv: list[str], env: dict | None = None, timeout: int = 3600):
+        """Startet ein Kommando und gibt den Prozess zurueck, statt zu warten.
+
+        Fuer Ausgaben, die nicht in den Arbeitsspeicher gehoeren - eine Datei
+        aus einem Backup kann Gigabytes gross sein. Der Aufrufer liest aus
+        proc.stdout in Haeppchen und muss den Prozess selbst abraeumen.
+
+        Die Umgebung wird als Zuweisungen vor das Kommando gesetzt, nicht ueber
+        das SSH-Protokoll geschickt: SendEnv verlangt eine Freigabe auf der
+        Gegenseite, die es hier nicht gibt.
+        """
+        vorspann = " ".join(f"{k}={shlex.quote(str(v))}" for k, v in (env or {}).items())
+        befehl = " ".join(shlex.quote(a) for a in argv)
+        if vorspann:
+            befehl = f"env {vorspann} {befehl}"
+        if self.is_local:
+            return subprocess.Popen(["/bin/sh", "-c", befehl],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return subprocess.Popen(self._base() + [befehl],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+
 
 class _NodeHost(Host):
     """Leitet jedes Kommando ueber SSH an einen anderen Cluster-Knoten weiter."""

@@ -596,6 +596,8 @@ async function refresh() {
   $("btn-run").disabled = picked.size === 0;
 
   inventory = await api("/api/inventory");
+  // Die Gastliste der Dateiansicht haengt am selben Bestand.
+  if (typeof fGaesteFuellen === "function") fGaesteFuellen();
   renderInventory();
   renderLeases(await api("/api/leases"));
   renderSchedules(await api("/api/schedules"));
@@ -1702,6 +1704,169 @@ async function spracheWechseln(neu) {
 
 $("btn-de").onclick = () => spracheWechseln("de");
 $("btn-en").onclick = () => spracheWechseln("en");
+
+// --- Dateien aus einem Backup -----------------------------------------------
+// Der Pfad wandert als base64 hin und her, genau so, wie proxmox-file-restore
+// ihn liefert. Das erspart die Frage, wie ein Dateiname mit Doppelpunkt,
+// Schraegstrich oder Umlaut durch zwei Schichten kommt.
+let fWeg = [];          // Brotkrumen: [{name, pfad}]
+let fGewaehlt = null;   // der markierte Eintrag
+
+function fBytes(n) {
+  if (n === null || n === undefined) return "";
+  const e = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0, v = Number(n);
+  while (v >= 1024 && i < e.length - 1) { v /= 1024; i++; }
+  return (i === 0 ? v : v.toFixed(1)) + " " + e[i];
+}
+
+function fGaesteFuellen() {
+  const sel = $("f-guest");
+  if (!sel) return;
+  const mit = inventory.filter((g) => g.has_backup);
+  sel.innerHTML = `<option value="">${t("bitte wählen")}</option>` + mit.map((g) =>
+    `<option value="${g.vmid}">${esc(g.name)} · ${g.vmid} · ${esc(g.kind || "")}</option>`
+  ).join("");
+}
+
+async function fStaendeFuellen() {
+  const vmid = $("f-guest").value;
+  const sel = $("f-snap");
+  fWeg = []; fGewaehlt = null; fZeichnen([]);
+  if (!vmid) { sel.innerHTML = ""; return; }
+  sel.innerHTML = `<option value="">${t("lade …")}</option>`;
+  try {
+    const r = await api(`/api/snapshots?vmid=${encodeURIComponent(vmid)}`);
+    const liste = r.snapshots || r || [];
+    sel.innerHTML = liste.map((s) =>
+      `<option value="${esc(s.volid)}">${esc((s.ts || "").replace("T", " ").slice(0, 16))}</option>`
+    ).join("");
+    if (liste.length) await fOeffnen("/");
+  } catch (e) {
+    sel.innerHTML = "";
+    $("f-out").innerHTML = `<div class="failbox">${esc(e.message)}</div>`;
+  }
+}
+
+async function fOeffnen(pfad, name) {
+  const volid = $("f-snap").value;
+  if (!volid) return;
+  $("f-list").innerHTML = `<div class="hint">${t("lade …")}</div>`;
+  $("f-out").innerHTML = "";
+  try {
+    const r = await api("/api/files/list", { volid, pfad });
+    if (pfad === "/") fWeg = [];
+    else fWeg.push({ name: name || "…", pfad });
+    fGewaehlt = null;
+    fMarkieren();
+    fZeichnen(r.eintraege || []);
+  } catch (e) {
+    $("f-list").innerHTML = `<div class="failbox">${esc(e.message)}</div>`;
+  }
+}
+
+function fZurueck(bis) {
+  fWeg = fWeg.slice(0, bis);
+  const letzt = fWeg[fWeg.length - 1];
+  const pfad = letzt ? letzt.pfad : "/";
+  fWeg = fWeg.slice(0, -1);
+  fOeffnen(pfad, letzt && letzt.name);
+}
+
+function fKrumen() {
+  const c = $("f-crumbs");
+  if (!c) return;
+  c.innerHTML = `<button class="sm" data-fup="0">${t("Anfang")}</button>` +
+    fWeg.map((k, i) => `<span>/</span><button class="sm" data-fup="${i + 1}">${esc(k.name)}</button>`).join("");
+  c.querySelectorAll("[data-fup]").forEach((b) => {
+    b.onclick = () => fZurueck(Number(b.dataset.fup));
+  });
+}
+
+function fZeichnen(eintraege) {
+  fKrumen();
+  const l = $("f-list");
+  if (!eintraege.length) {
+    l.innerHTML = `<div class="hint">${t("hier liegt nichts")}</div>`;
+    return;
+  }
+  l.innerHTML = eintraege.map((e, i) =>
+    `<div class="row" data-fi="${i}">
+       <span class="ic">${e.verzeichnis ? "▸" : "·"}</span>
+       <span class="nm">${esc(e.name || "")}</span>
+       <span class="sz">${e.verzeichnis ? "" : fBytes(e.groesse)}</span>
+     </div>`).join("");
+  l.querySelectorAll("[data-fi]").forEach((row) => {
+    const e = eintraege[Number(row.dataset.fi)];
+    row.onclick = () => {
+      if (e.verzeichnis) { fOeffnen(e.pfad, e.name); return; }
+      fGewaehlt = e;
+      l.querySelectorAll(".row").forEach((r) => r.classList.remove("on"));
+      row.classList.add("on");
+      fMarkieren();
+    };
+  });
+}
+
+function fMarkieren() {
+  const s = $("f-sel");
+  const b = $("btn-fdl");
+  if (!s || !b) return;
+  if (!fGewaehlt) {
+    s.className = "hint";
+    s.textContent = t("Noch nichts gewählt.");
+    b.disabled = true;
+    return;
+  }
+  s.className = "okbox";
+  s.innerHTML = `<b>${esc(fGewaehlt.name)}</b> · ${fBytes(fGewaehlt.groesse)}`;
+  b.disabled = false;
+}
+
+async function fHerunterladen() {
+  const pw = $("f-pass").value;
+  if (!pw) {
+    $("f-out").innerHTML = `<div class="failbox">${t("Bitte das eigene Passwort zur Bestätigung eingeben.")}</div>`;
+    return;
+  }
+  if (!fGewaehlt) return;
+  const b = $("btn-fdl");
+  b.disabled = true;
+  $("f-out").innerHTML = `<div class="infobox">${t("hole die Datei …")}</div>`;
+  try {
+    // Bewusst nicht ueber api(): die Antwort ist die Datei selbst, kein JSON.
+    const r = await fetch("/api/files/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ volid: $("f-snap").value, pfad: fGewaehlt.pfad, password: pw }),
+    });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      throw new Error(d.error || d.message || `HTTP ${r.status}`);
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fGewaehlt.name || "datei";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    $("f-out").innerHTML = `<div class="okbox">${t("Fertig.")}</div>`;
+  } catch (e) {
+    $("f-out").innerHTML = `<div class="failbox">${esc(e.message)}</div>`;
+  } finally {
+    $("f-pass").value = "";
+    b.disabled = false;
+  }
+}
+
+if ($("f-guest")) {
+  $("f-guest").onchange = fStaendeFuellen;
+  $("f-snap").onchange = () => { fWeg = []; fOeffnen("/"); };
+  $("btn-fdl").onclick = fHerunterladen;
+}
 
 // --- Start ------------------------------------------------------------------
 buildChips("chips", "checks");

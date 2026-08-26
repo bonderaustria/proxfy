@@ -133,6 +133,20 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 .hintline{font-size:12.5px;color:var(--dim)}
 
 /* ---------- Meldungen ---------- */
+.crumbs{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:14px;
+        font-family:var(--mono);font-size:12.5px}
+.crumbs button{padding:2px 7px;font-size:12px}
+.crumbs span{color:var(--dim)}
+.filelist{margin-top:10px;border:1px solid var(--line-soft);border-radius:var(--r);
+          background:var(--sunken);max-height:420px;overflow:auto}
+.filelist .row{display:flex;gap:10px;align-items:center;padding:6px 11px;
+               border-bottom:1px solid var(--line-soft);cursor:pointer}
+.filelist .row:last-child{border-bottom:none}
+.filelist .row:hover{background:var(--panel2)}
+.filelist .row.on{background:var(--panel2);border-left:2px solid var(--accent)}
+.filelist .nm{flex:1;font-family:var(--mono);font-size:12.5px}
+.filelist .sz{color:var(--dim);font-size:12px;font-variant-numeric:tabular-nums}
+.filelist .ic{width:16px;color:var(--muted)}
 .warnbox,.okbox,.failbox,.infobox{margin-top:11px;padding:10px 12px;border-radius:var(--r);
        font-size:12.5px;line-height:1.5}
 .pxtab td{padding:3px 14px 3px 0;vertical-align:top}
@@ -256,6 +270,7 @@ body[data-role="user"] .nur-admin{display:none !important}
   <button data-view="live">Testg&auml;ste <span class="badge" id="b-leases">0</span></button>
   <button data-view="sched">Zeitpl&auml;ne <span class="badge" id="b-sched">0</span></button>
   <button data-view="hist">Verlauf</button>
+  <button data-view="files" class="nur-super">Dateien</button>
   <span class="grp"></span>
   <button data-view="cfg" class="nur-super">Einstellungen</button>
   <button data-view="konto">Konto</button>
@@ -484,6 +499,51 @@ body[data-role="user"] .nur-admin{display:none !important}
 </section>
 
 <!-- ═════════════ EINSTELLUNGEN ═════════════ -->
+<section class="view" id="v-files">
+  <div class="cols">
+    <section class="panel">
+      <h2>Datei aus einem Backup holen</h2>
+      <div class="form">
+        <div class="grid2">
+          <div><label for="f-guest">Gast</label>
+            <select id="f-guest"></select></div>
+          <div><label for="f-snap">Backup-Stand</label>
+            <select id="f-snap"></select></div>
+        </div>
+        <div class="hint">Es wird nichts wiederhergestellt und nichts gestartet.
+          Bei einem Container wird unmittelbar im Dateiarchiv gelesen; bei einer VM
+          schlie&szlig;t Proxmox das Blockabbild kurz mit einer eigenen Hilfsmaschine
+          auf und r&auml;umt sie danach selbst wieder ab.</div>
+
+        <div id="f-crumbs" class="crumbs" data-dynamisch></div>
+        <div id="f-list" class="filelist" data-dynamisch>
+          <div class="hint">W&auml;hle einen Gast und einen Backup-Stand.</div>
+        </div>
+        <div id="f-out"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Herunterladen</h2>
+      <div class="form">
+        <div id="f-sel" class="hint">Noch nichts gew&auml;hlt.</div>
+        <label for="f-pass">Dein Passwort zur Best&auml;tigung</label>
+        <input id="f-pass" type="password" autocomplete="current-password">
+        <div class="btns">
+          <button class="primary" id="btn-fdl" disabled>Herunterladen</button>
+        </div>
+        <div class="warnbox">Hier kommen <b>Inhalte</b> heraus, keine Pr&uuml;fergebnisse
+          &mdash; Passwortdateien, Datenbanken, Schl&uuml;ssel. Deshalb nur Super Admin,
+          deshalb das Passwort erneut, und jeder Abruf steht im Journal mit Konto,
+          Gast, Pfad und Zeit.</div>
+        <div class="infobox">Ein Verzeichnis kommt als Archiv. Bei gro&szlig;en
+          Dateien beginnt der Download, sobald das erste St&uuml;ck da ist &mdash;
+          es wird nichts zwischengelagert.</div>
+      </div>
+    </section>
+  </div>
+</section>
+
 <section class="view" id="v-cfg">
 <div class="split">
   <aside class="rail">

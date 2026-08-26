@@ -22,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import auth as authmod
 from . import aussenadresse
+from . import dateien
 from . import checks as checkmod
 from . import discover as discovery
 from . import netguard, pve
@@ -270,6 +271,73 @@ class Handler(BaseHTTPRequestHandler):
                     "message": f"Verbindung steht: {knoten}, {version.splitlines()[0]}"}
         except Exception as e:
             return {"ok": False, "message": f"Keine Verbindung: {e}"}
+
+    # --- Dateien aus einem Backup -------------------------------------------
+    # Hier kommen Inhalte heraus, keine Urteile: Passwortdateien, Datenbanken,
+    # Schluessel. Deshalb Super Admin, deshalb das Passwort erneut, und deshalb
+    # steht jeder Abruf im Journal.
+
+    def _dateien_storage(self, body: dict) -> str:
+        return (body.get("storage") or self.cfg.restore.backup_storage).strip()
+
+    def _dateien_auflisten(self, body: dict) -> dict:
+        authmod.mindestens(self.identity(), "super")
+        volid = (body.get("volid") or "").strip()
+        if not volid:
+            raise ValueError("Kein Backup-Stand angegeben")
+        eintraege = dateien.auflisten(self.host, self._dateien_storage(body),
+                                      volid, body.get("pfad") or "/")
+        return {"eintraege": eintraege, "volid": volid}
+
+    def _datei_ausliefern(self, body: dict) -> None:
+        ident = self.identity()
+        authmod.mindestens(ident, "super")
+        # Eine uebernommene Sitzung soll nicht genuegen, um Daten abzuziehen.
+        self._passwort_pruefen(body)
+
+        volid = (body.get("volid") or "").strip()
+        pfad = (body.get("pfad") or "").strip()
+        if not volid or not pfad:
+            raise ValueError("Backup-Stand und Pfad werden gebraucht")
+
+        klartext = dateien.lesbar(pfad)
+        name = klartext.rstrip("/").rsplit("/", 1)[-1] or "datei"
+        self.log_error_line(
+            f"[Dateien] {ident.email} holt {klartext} aus {volid}")
+
+        proc = dateien.herausziehen(self.host, self._dateien_storage(body),
+                                    volid, pfad)
+        # Kopfzeilen erst schicken, wenn das erste Haeppchen da ist: scheitert
+        # der Abruf, laesst sich noch ein Fehler senden statt einer kaputten
+        # Datei mit Status 200.
+        erstes = proc.stdout.read(65536)
+        if not erstes:
+            fehler = (proc.stderr.read() or b"").decode("utf-8", "replace").strip()
+            proc.wait(timeout=30)
+            return self._json({"error": fehler or "Nichts erhalten."}, 502)
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Disposition",
+                         "attachment; filename*=UTF-8''" +
+                         urllib.parse.quote(name))
+        self.end_headers()
+        try:
+            self.wfile.write(erstes)
+            while True:
+                stueck = proc.stdout.read(65536)
+                if not stueck:
+                    break
+                self.wfile.write(stueck)
+        except (BrokenPipeError, ConnectionResetError):
+            # Abbruch im Browser. Den Abruf gleich mit beenden, sonst laeuft er
+            # auf dem Hypervisor weiter und haelt die Hilfs-VM offen.
+            proc.kill()
+        finally:
+            try:
+                proc.wait(timeout=30)
+            except Exception:
+                proc.kill()
 
     def _proxy_pruefen(self, body: dict) -> dict:
         """Ruft die Aussenadresse auf und sagt, was zurueckkam.
@@ -587,6 +655,11 @@ class Handler(BaseHTTPRequestHandler):
                 ident = self.identity()
                 return self._json({"sprache": self.store.set_sprache(
                     ident.user_id, body.get("sprache", "de"))})
+
+            if u.path == "/api/files/list":
+                return self._json(self._dateien_auflisten(body))
+            if u.path == "/api/files/download":
+                return self._datei_ausliefern(body)
 
             if u.path == "/api/settings/proxy":
                 authmod.mindestens(self.identity(), "super")
