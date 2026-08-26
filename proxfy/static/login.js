@@ -120,6 +120,19 @@ document.addEventListener("keydown", (e) => {
   if (knopf && !knopf.disabled) knopf.click();
 });
 
+// --- Sprache ----------------------------------------------------------------
+// Hier gibt es noch kein Konto, an dem eine Sprache haengen koennte. Also das,
+// was der Browser nahelegt - und ein Schalter, dessen Wahl bis zur Anmeldung
+// im Browser bleibt. Danach gilt die Sprache des Kontos.
+spracheSetzen(spracheVorgabe());
+function schalter() {
+  $("l-de").classList.toggle("on", sprache() === "de");
+  $("l-en").classList.toggle("on", sprache() === "en");
+}
+$("l-de").onclick = () => { spracheSetzen("de"); schalter(); };
+$("l-en").onclick = () => { spracheSetzen("en"); schalter(); };
+schalter();
+
 // --- Start ------------------------------------------------------------------
 (async () => {
   try {

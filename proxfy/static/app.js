@@ -278,9 +278,9 @@ function buildTargets() {
       "Der Modus geroutet verlangt eine hinterlegte Adresse. Unter Einstellungen anlegen.");
   }
   return ids.map((vmid) => {
-    const t = { ...base, vmid };
-    if (ids.length === 1 && $("snapshot").value) t.snapshot = $("snapshot").value;
-    return t;
+    const ziel = { ...base, vmid };
+    if (ids.length === 1 && $("snapshot").value) ziel.snapshot = $("snapshot").value;
+    return ziel;
   });
 }
 
@@ -304,7 +304,7 @@ function renderLeases(leases) {
 
   $("leases").querySelectorAll("[data-del]").forEach((b) => {
     b.onclick = async () => {
-      if (!confirm(`Testgast ${b.dataset.del} endgültig entfernen?`)) return;
+      if (!confirm(T`Testgast ${b.dataset.del} endgültig entfernen?`)) return;
       await api("/api/leases/remove", { scratch_vmid: Number(b.dataset.del) });
       refresh();
     };
@@ -533,7 +533,7 @@ $("btn-runsched").onclick = async () => {
 };
 
 $("btn-delsched").onclick = async () => {
-  if (!confirm("Diesen Zeitplan löschen?")) return;
+  if (!confirm(t("Diesen Zeitplan löschen?"))) return;
   await api("/api/schedules/delete", { id: sGewaehlt });
   zeitplanNeu();
   refresh();
@@ -733,8 +733,8 @@ $("btn-mksched").onclick = () => {
 
 $("btn-reap").onclick = async () => {
   const r = await api("/api/reap", { force: false });
-  if (r.found.length === 0) { alert("Keine verwaisten Testgäste gefunden."); return; }
-  if (confirm(`Gefunden: ${r.found.join(", ")}\n\nJetzt vernichten?`)) {
+  if (r.found.length === 0) { alert(t("Keine verwaisten Testgäste gefunden.")); return; }
+  if (confirm(T`Gefunden: ${r.found.join(", ")}\n\nJetzt vernichten?`)) {
     await api("/api/reap", { force: true });
     refresh();
   }
@@ -1067,7 +1067,7 @@ $("btn-json").onclick = () => {
       const v = JSON.parse($("checks").value || "[]");
       if (Array.isArray(v)) checkList = v;
     } catch {
-      alert("Das JSON ist nicht gueltig - die Zeilenansicht zeigt den letzten gueltigen Stand.");
+      alert(t("Das JSON ist nicht gueltig - die Zeilenansicht zeigt den letzten gueltigen Stand."));
     }
     renderCheckRows();
   }
@@ -1101,13 +1101,16 @@ async function loadMe() {
   const data = await r.json();
   if (!data.authenticated) { location.href = "/login"; return null; }
   me = data.user;
+  // Sprache des Kontos, sonst was der Browser nahelegt.
+  spracheSetzen(me.sprache || spracheVorgabe());
+  schalterZeichnen();
   document.body.dataset.role = me.role || "user";
-  const rn = { super: "Super Admin", admin: "Admin", user: "Benutzer" }[me.role] || me.role;
+  const rn = t({ super: "Super Admin", admin: "Admin", user: "Benutzer" }[me.role] || me.role);
   $("whoami").innerHTML = `${esc(me.name || me.email)} <span class="pill ${
     { super: "super", admin: "adm", user: "usr" }[me.role] || "usr"}">${esc(rn)}</span>`;
   $("k-wer").textContent = `${me.email} · ${rn}`;
   const t2 = $("tick-2fa");
-  if (t2) t2.textContent = me.two_factor ? "an" : "aus";
+  if (t2) t2.textContent = me.two_factor ? t("an") : t("aus");
   render2fa();
   return me;
 }
@@ -1193,7 +1196,7 @@ $("btn-2fa-confirm").onclick = async () => {
 $("btn-2fa-off").onclick = async () => {
   const password = $("k-pass-off").value;
   if (!password) return kmsg("fail", "Bitte das eigene Passwort zur Bestätigung eingeben.");
-  if (!confirm("Zwei-Faktor wirklich abschalten?")) return;
+  if (!confirm(t("Zwei-Faktor wirklich abschalten?"))) return;
   try {
     const r = await fetch("/api/auth/two-factor/disable", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -1270,7 +1273,7 @@ async function loadUsers() {
     }).join("");
 
     const tun = async (frage, pfad, daten) => {
-      if (frage && !confirm(frage)) return;
+      if (frage && !confirm(t(frage))) return;
       try { await api(pfad, daten); loadUsers(); }
       catch (e) { $("u-out").innerHTML = `<div class="failbox">${esc(e.message)}</div>`; }
     };
@@ -1280,12 +1283,11 @@ async function loadUsers() {
     });
     $("users").querySelectorAll("[data-u2fa]").forEach((b) => {
       b.onclick = () => tun(
-        "Zwei-Faktor dieses Benutzers zurücksetzen? Er meldet sich danach nur mit "
-        + "Passwort an und richtet ihn neu ein. Alle seine Sitzungen werden beendet.",
+        "Zwei-Faktor dieses Benutzers zurücksetzen? Er meldet sich danach nur mit Passwort an und richtet ihn neu ein. Alle seine Sitzungen werden beendet.",
         "/api/users/reset-2fa", { id: b.dataset.u2fa });
     });
     $("users").querySelectorAll("[data-urole]").forEach((b) => {
-      b.onclick = () => tun(`Rolle auf „${ROLLEN_NAME[b.dataset.neu]}“ ändern?`,
+      b.onclick = () => tun(T`Rolle auf „${ROLLEN_NAME[b.dataset.neu]}“ ändern?`,
                             "/api/users/role", { id: b.dataset.urole, role: b.dataset.neu });
     });
     $("users").querySelectorAll("[data-ulogout]").forEach((b) => {
@@ -1356,8 +1358,8 @@ function renderIpPool() {
   if (cur && [...$("ip-pick").options].some((o) => o.value === cur)) $("ip-pick").value = cur;
   syncGateway();
 
-  const t = $("tick-ips");
-  if (t) t.textContent = ipPool.reduce((n, e) => n + (e.anzahl || 1), 0);
+  const tick = $("tick-ips");
+  if (tick) tick.textContent = ipPool.reduce((n, e) => n + (e.anzahl || 1), 0);
   const c = $("ip-count");
   if (c) {
     const adr = ipPool.reduce((n, e) => n + (e.anzahl || 1), 0);
@@ -1380,7 +1382,7 @@ function renderIpPool() {
 
   $("ips").querySelectorAll("[data-delip]").forEach((b) => {
     b.onclick = async () => {
-      if (!confirm("Diesen Eintrag entfernen?")) return;
+      if (!confirm(t("Diesen Eintrag entfernen?"))) return;
       await api("/api/ips/delete", { id: Number(b.dataset.delip) });
       if (ipBearbeitet === Number(b.dataset.delip)) ipFormularLeeren();
       await loadIpPool();
@@ -1678,6 +1680,26 @@ function buildWeekdayPicker() {
     cb.onchange = () => cb.closest("label").classList.toggle("on", cb.checked);
   });
 }
+
+// --- Sprache ----------------------------------------------------------------
+function schalterZeichnen() {
+  const s = sprache();
+  $("btn-de").classList.toggle("on", s === "de");
+  $("btn-en").classList.toggle("on", s === "en");
+}
+
+async function spracheWechseln(neu) {
+  if (neu === sprache()) return;
+  spracheSetzen(neu);
+  schalterZeichnen();
+  // Alles Dynamische stammt aus app.js und geht erst beim naechsten Zeichnen
+  // durch t(). Statt jede Ansicht einzeln nachzuziehen: einmal neu aufbauen.
+  try { await api("/api/me/language", { sprache: neu }); } catch (e) { /* egal */ }
+  location.reload();
+}
+
+$("btn-de").onclick = () => spracheWechseln("de");
+$("btn-en").onclick = () => spracheWechseln("en");
 
 // --- Start ------------------------------------------------------------------
 buildChips("chips", "checks");

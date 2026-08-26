@@ -39,6 +39,11 @@ button.ghost{background:none;border-color:var(--line);color:var(--muted);
 .msg.ok{background:#12301a;border:1px solid #1e4a26;color:#7ee787}
 .msg.info{background:#16222e;border:1px solid #24405c;color:#a6c8e8}
 .step{display:none} .step.on{display:block}
+.sprache button{padding:3px 10px;font-size:11.5px;width:auto;background:var(--panel2);
+      border:1px solid var(--line);color:var(--muted);cursor:pointer;border-radius:0}
+.sprache button:first-child{border-radius:var(--r) 0 0 var(--r)}
+.sprache button:last-child{border-radius:0 var(--r) var(--r) 0;margin-left:-1px}
+.sprache button.on{background:var(--accent);border-color:var(--accent);color:#06121f;font-weight:600}
 .foot{margin-top:18px;color:var(--muted);font-size:11.5px;text-align:center;
       border-top:1px solid var(--line);padding-top:12px}
 </style>
@@ -95,8 +100,13 @@ button.ghost{background:none;border-color:var(--line);color:var(--muted);
   </div>
 
   <div id="out"></div>
+  <div class="sprache" style="text-align:center;margin-top:14px">
+    <button class="sm" id="l-de">DE</button><button class="sm" id="l-en">EN</button>
+  </div>
   <div class="foot">Sitzungen liegen serverseitig. Es wird nichts im Browser gespeichert.</div>
 </div>
+<script src="/i18n.js"></script>
+<script src="/i18n-en.js"></script>
 <script src="/login.js"></script>
 </body>
 </html>

@@ -121,6 +121,14 @@ CREATE TABLE IF NOT EXISTS schedules (
     last_run     TEXT,
     created      TEXT NOT NULL
 );
+
+-- Was ein Konto fuer sich einstellt. Bewusst hier und nicht beim Anmeldedienst:
+-- dessen Schema gehoert Better Auth, und eine eigene Spalte darin waere bei
+-- jeder Migration im Weg.
+CREATE TABLE IF NOT EXISTS user_prefs (
+    user_id  TEXT PRIMARY KEY,
+    sprache  TEXT NOT NULL DEFAULT 'de'
+);
 """
 
 
@@ -512,6 +520,25 @@ class Store:
             c.execute("DELETE FROM pending_rollback")
 
     # --- Zeitplaene ----------------------------------------------------------
+
+
+    # --- Was ein Konto fuer sich einstellt ------------------------------------
+
+    def sprache(self, user_id: str) -> str:
+        """Sprache dieses Kontos. Ohne Eintrag Deutsch - das ist die Quelle."""
+        with self._conn() as c:
+            r = c.execute("SELECT sprache FROM user_prefs WHERE user_id=?",
+                          (user_id,)).fetchone()
+        return r["sprache"] if r and r["sprache"] in ("de", "en") else "de"
+
+    def set_sprache(self, user_id: str, sprache: str) -> str:
+        if sprache not in ("de", "en"):
+            raise ValueError(f"Unbekannte Sprache '{sprache}'")
+        with self._lock, self._conn() as c:
+            c.execute("INSERT INTO user_prefs (user_id, sprache) VALUES (?,?) "
+                      "ON CONFLICT(user_id) DO UPDATE SET sprache=excluded.sprache",
+                      (user_id, sprache))
+        return sprache
 
     @staticmethod
     def _sched_row(r: sqlite3.Row) -> dict:

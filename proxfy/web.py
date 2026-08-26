@@ -39,7 +39,8 @@ _CTYPES = {"html": "text/html; charset=utf-8",
 # Pfade, die ohne Anmeldung erreichbar sein muessen - sonst kaeme niemand je
 # zur Anmeldemaske. Bewusst kurz gehalten und ausdruecklich aufgezaehlt.
 _OFFEN = {"/login", "/login.html", "/login.js", "/api/me", "/api/setup",
-          "/logo.png", "/favicon.png", "/favicon.ico"}
+          "/logo.png", "/favicon.png", "/favicon.ico",
+          "/i18n.js", "/i18n-en.js"}
 
 # Anmeldeversuche, die gebremst und gesperrt werden.
 _ANMELDEPFADE = ("/api/auth/sign-in", "/api/auth/two-factor/verify-totp",
@@ -436,19 +437,24 @@ class Handler(BaseHTTPRequestHandler):
                 return self._file("login.html")
             if u.path == "/login.js":
                 return self._file("login.js")
+            if u.path in ("/i18n.js", "/i18n-en.js"):
+                return self._file(u.path.lstrip("/"))
 
             if u.path == "/api/me":
                 # Beantwortet zugleich, ob ueberhaupt schon ein Konto besteht.
                 ident = self.identity()
+                nutzer = dataclasses.asdict(ident) if ident else None
+                if nutzer:
+                    nutzer["sprache"] = self.store.sprache(ident.user_id)
                 return self._json({
                     "authenticated": ident is not None,
                     "needs_setup": self._needs_setup(),
-                    "user": dataclasses.asdict(ident) if ident else None,
+                    "user": nutzer,
                 })
 
             if u.path in ("/", "/index.html"):
                 return self._file("index.html")
-            if u.path in ("/app.js", "/style.css"):
+            if u.path in ("/app.js", "/style.css", "/i18n.js", "/i18n-en.js"):
                 return self._file(u.path.lstrip("/"))
             if u.path in ("/logo.png", "/favicon.png"):
                 return self._file(u.path.lstrip("/"))
@@ -549,6 +555,11 @@ class Handler(BaseHTTPRequestHandler):
 
             if u.path == "/api/settings":
                 return self._json(self._einstellungen_speichern(body))
+            if u.path == "/api/me/language":
+                ident = self.identity()
+                return self._json({"sprache": self.store.set_sprache(
+                    ident.user_id, body.get("sprache", "de"))})
+
             if u.path == "/api/settings/proxy":
                 authmod.mindestens(self.identity(), "super")
                 return self._json(self._proxy_pruefen(body))
