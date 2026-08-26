@@ -86,7 +86,9 @@ mkdir -p "$DEST/proxfy/static" "$DEST/auth"
 cp -f "$SRC"/proxfy/*.py     "$DEST/proxfy/"
 cp -f "$SRC"/proxfy/static/* "$DEST/proxfy/static/"
 cp -f "$SRC"/auth/*.js "$SRC"/auth/package.json "$DEST/auth/"
-[ -f "$SRC/README.md" ]    && cp -f "$SRC/README.md"    "$DEST/"
+for r in README.md README.de.md; do
+    [ -f "$SRC/$r" ] && cp -f "$SRC/$r" "$DEST/"
+done
 [ -f "$SRC/uninstall.sh" ] && cp -f "$SRC/uninstall.sh" "$DEST/" && chmod 0755 "$DEST/uninstall.sh"
 
 # --- Geheimnisse -------------------------------------------------------------
