@@ -136,7 +136,7 @@ if [ "${PROXFY_DRY_RUN:-0}" = "1" ]; then
 fi
 
 # --- Quelle holen ------------------------------------------------------------
-ARBEIT=$(mktemp -d /tmp/proxfy-XXXXXX)
+ARBEIT=$(mktemp -d /tmp/proxfy-download-XXXXXX)
 trap 'rm -rf "$ARBEIT"' EXIT
 
 if [ -f "$(dirname "${BASH_SOURCE[0]}")/create-lxc.sh" ]; then
@@ -149,7 +149,9 @@ else
         abbruch "Download fehlgeschlagen. Ist das Repository oeffentlich und der Zweig '$ZWEIG' richtig?"
     fi
     tar -xzf "$ARBEIT/proxfy.tar.gz" -C "$ARBEIT"
-    QUELLE=$(find "$ARBEIT" -maxdepth 1 -type d -name "proxfy-*" | head -1)
+    # -mindepth 1 ist noetig: ohne das listet find auch das Startverzeichnis,
+    # und dessen Name passt selbst auf das Muster.
+    QUELLE=$(find "$ARBEIT" -mindepth 1 -maxdepth 1 -type d | head -1)
     [ -n "$QUELLE" ] || abbruch "Das Archiv sieht unerwartet aus."
 fi
 [ -f "$QUELLE/create-lxc.sh" ] || abbruch "create-lxc.sh fehlt in der Quelle."
