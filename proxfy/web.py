@@ -69,9 +69,37 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _read_body(self) -> dict:
+    def _rumpf_bytes(self) -> bytes:
+        """Liest den Rumpf der Anfrage - auch stueckweise uebertragen.
+
+        Hinter einem Reverse Proxy kommt der Rumpf oft ohne Content-Length an:
+        spricht der Browser HTTP/2 mit dem Proxy, kennt dieser die Laenge beim
+        Weiterreichen noch nicht und schickt 'Transfer-Encoding: chunked'. Wer
+        dann nur Content-Length auswertet, liest null Bytes - die Anmeldung
+        scheitert mit 'expected string, received undefined', obwohl der Browser
+        alles mitgeschickt hat.
+        """
+        if "chunked" in (self.headers.get("Transfer-Encoding") or "").lower():
+            teile = []
+            while True:
+                zeile = self.rfile.readline(1024).strip()
+                # Nach der Laenge darf eine Erweiterung stehen, abgetrennt mit
+                # Semikolon. Sie interessiert hier nicht.
+                laenge = int(zeile.split(b";")[0] or b"0", 16)
+                if laenge == 0:
+                    break
+                teile.append(self.rfile.read(laenge))
+                self.rfile.read(2)          # das CRLF hinter dem Stueck
+            # Abschliessende Kopfzeilen bis zur Leerzeile wegraeumen.
+            while self.rfile.readline(1024).strip():
+                pass
+            return b"".join(teile)
+
         n = int(self.headers.get("Content-Length") or 0)
-        return json.loads(self.rfile.read(n) or b"{}")
+        return self.rfile.read(n) if n else b""
+
+    def _read_body(self) -> dict:
+        return json.loads(self._rumpf_bytes() or b"{}")
 
     def _file(self, name: str) -> None:
         p = (STATIC / name).resolve()
@@ -140,8 +168,7 @@ class Handler(BaseHTTPRequestHandler):
         bevor der Anmeldedienst das Passwort ueberhaupt zu sehen bekommt.
         """
         u = urllib.parse.urlparse(self.path)
-        n = int(self.headers.get("Content-Length") or 0)
-        body = self.rfile.read(n) if n else b""
+        body = self._rumpf_bytes()
 
         ist_anmeldung = any(u.path.startswith(p) for p in _ANMELDEPFADE)
         ip = self.client_ip()
