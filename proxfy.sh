@@ -259,8 +259,8 @@ if [ "$MODUS" = "update" ]; then
 
     # install.sh muss wieder wissen, wie es an den Hypervisor kommt. Beides
     # steht bereits in der vorhandenen config.yaml.
-    PVE_HOST=$(pct exec "$BESTAND" -- awk '/^[[:space:]]*host:/ {print $2; exit}' /opt/proxfy/config.yaml)
-    PVE_KEY=$(pct exec "$BESTAND" -- awk '/^[[:space:]]*key_file:/ {print $2; exit}' /opt/proxfy/config.yaml)
+    PVE_HOST=$(pct exec "$BESTAND" -- awk '/^[[:space:]]+host:/ {print $2; exit}' /opt/proxfy/config.yaml)
+    PVE_KEY=$(pct exec "$BESTAND" -- awk '/^[[:space:]]+key_file:/ {print $2; exit}' /opt/proxfy/config.yaml)
     [ -n "$PVE_HOST" ] || abbruch "In der vorhandenen config.yaml steht kein Hypervisor."
     [ -n "$PVE_KEY" ]  || abbruch "In der vorhandenen config.yaml steht kein Schluessel."
 
