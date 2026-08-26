@@ -457,3 +457,12 @@ Object.assign(EN, {
   "Ein Verzeichnis kommt als Archiv. Bei großen Dateien beginnt der Download, sobald das erste Stück da ist — es wird nichts zwischengelagert.":
     "A directory comes as an archive. For large files the download starts as soon as the first chunk arrives — nothing is buffered in between.",
 });
+
+// Wochentage. Kurz, und der Beobachter unterscheidet nicht nach Ort: er
+// uebersetzt jeden Textknoten, dessen ganzer Inhalt genau so lautet. Bei
+// diesen sieben ist das vertretbar - ein Gast oder eine Pruefung, die exakt
+// "Mo" oder "So" heisst und sonst nichts, ist kaum zu erwarten.
+Object.assign(EN, {
+  "Mo": "Mon", "Di": "Tue", "Mi": "Wed", "Do": "Thu",
+  "Fr": "Fri", "Sa": "Sat", "So": "Sun",
+});

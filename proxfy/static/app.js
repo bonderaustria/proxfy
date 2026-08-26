@@ -1692,14 +1692,51 @@ function schalterZeichnen() {
   $("btn-en").classList.toggle("on", s === "en");
 }
 
+/** Zeichnet neu, was app.js selbst erzeugt hat.
+ *
+ * Das statische Markup traegt der Uebersetzer selbst - er hat sich beim Laden
+ * gemerkt, was urspruenglich dastand, und kann deshalb in beide Richtungen.
+ * Fuer alles Erzeugte geht das nicht: eine englische Zeile laesst sich nicht
+ * zurueckuebersetzen, das Verzeichnis kennt nur den Weg hin. Also wird es aus
+ * den Daten neu aufgebaut - dabei entsteht wieder deutscher Text, den der
+ * Beobachter uebersetzt, falls Englisch eingestellt ist.
+ *
+ * Bewusst NICHT dabei: die Einstellungsmasken. Sie neu zu laden verwuerfe
+ * ungespeicherte Aenderungen. Ihre Beschriftungen stehen ohnehin im Markup.
+ */
+async function neuZeichnen() {
+  // Die Wochentage werden beim Aufbauen auf Mo-Fr zurueckgesetzt. Was gewaehlt
+  // war, bleibt erhalten - sonst verliert ein Sprachwechsel die Eingabe.
+  const wdVorher = [...document.querySelectorAll("#s-wd [data-wd]")]
+    .filter((c) => c.checked).map((c) => c.dataset.wd);
+  const gastVorher = $("f-guest") ? $("f-guest").value : "";
+
+  buildChips("chips", "checks");
+  buildChips("s-chips", "s-checks");
+  buildWeekdayPicker();
+  document.querySelectorAll("#s-wd [data-wd]").forEach((cb) => {
+    const an = wdVorher.includes(cb.dataset.wd);
+    cb.checked = an;
+    cb.closest("label").classList.toggle("on", an);
+  });
+  renderCheckRows();
+
+  try {
+    await refresh();
+    await loadIpPool();
+    await loadUsers();
+    await loadLogins();
+  } catch (e) { /* im Zweifel bleibt eine Ansicht deutsch stehen */ }
+
+  if ($("f-guest") && gastVorher) $("f-guest").value = gastVorher;
+}
+
 async function spracheWechseln(neu) {
   if (neu === sprache()) return;
-  spracheSetzen(neu);
+  spracheSetzen(neu);          // statisches Markup und Beobachter
   schalterZeichnen();
-  // Alles Dynamische stammt aus app.js und geht erst beim naechsten Zeichnen
-  // durch t(). Statt jede Ansicht einzeln nachzuziehen: einmal neu aufbauen.
   try { await api("/api/me/language", { sprache: neu }); } catch (e) { /* egal */ }
-  location.reload();
+  await neuZeichnen();
 }
 
 $("btn-de").onclick = () => spracheWechseln("de");
