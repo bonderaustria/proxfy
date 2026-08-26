@@ -4,6 +4,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
+import shlex
 import time
 
 from .config import (SCRATCH_DESC_PREFIX, SCRATCH_TAG, SafetyError,
@@ -327,6 +328,59 @@ def destroy(host: Host, vmid: int, kind: str, force: bool = False) -> Result:
     return host.run("pct", "destroy", str(vmid), "--purge", "1", timeout=600)
 
 
+def reste_ohne_konfiguration(host: Host, lo: int, hi: int,
+                             protected: set[int] | None = None) -> dict[int, list[str]]:
+    """Datentraeger im Scratch-Bereich, zu denen es keinen Gast mehr gibt.
+
+    Bricht eine Wiederherstellung mittendrin ab, koennen Datentraeger und
+    Einhaengepunkte die Konfiguration ueberleben - der Gast ist dann fort, aber
+    zwoelf Gigabyte liegen weiter belegt herum. Wer nur nach Konfigurations-
+    dateien sucht, sieht das nie.
+    """
+    protected = protected or set()
+    vorhanden = set()
+    r = host.sh("ls /etc/pve/qemu-server /etc/pve/lxc 2>/dev/null")
+    for name in r.out.split():
+        m = re.match(r"^(\d+)\.conf$", name)
+        if m:
+            vorhanden.add(int(m.group(1)))
+
+    raus: dict[int, list[str]] = {}
+    # pvesm listet die Datentraeger je Storage samt zugehoeriger VMID.
+    st = host.sh("pvesm status --content images,rootdir 2>/dev/null | awk 'NR>1 {print $1}'")
+    for storage in st.out.split():
+        lst = host.sh(f"pvesm list {shlex.quote(storage)} 2>/dev/null")
+        for zeile in lst.out.splitlines()[1:]:
+            teile = zeile.split()
+            if len(teile) < 5:
+                continue
+            volid = teile[0]
+            try:
+                vmid = int(teile[-1])
+            except ValueError:
+                continue
+            if not (lo <= vmid <= hi) or vmid in protected or vmid in vorhanden:
+                continue
+            raus.setdefault(vmid, []).append(volid)
+    return raus
+
+
+def reste_entfernen(host: Host, vmid: int, volids: list[str]) -> list[str]:
+    """Haengt aus und gibt frei. Nur im Scratch-Bereich - das prueft der Torwaechter."""
+    assert_scratch_vmid(vmid)
+    getan = []
+    # Erst aushaengen: solange etwas gemountet ist, verweigert LVM das Loeschen
+    # mit "contains a filesystem in use". Mehrfach, weil sich bei einem
+    # abgebrochenen Restore Einhaengungen uebereinander stapeln koennen.
+    pfad = f"/var/lib/lxc/{vmid}/rootfs"
+    host.sh(f"for i in 1 2 3 4; do umount {shlex.quote(pfad)} 2>/dev/null || break; done")
+    for volid in volids:
+        r = host.run("pvesm", "free", volid, timeout=300)
+        getan.append(f"{volid}: {'freigegeben' if r.ok else (r.err or r.out).strip()[:80]}")
+    host.sh(f"rm -rf {shlex.quote('/var/lib/lxc/' + str(vmid))} 2>/dev/null")
+    return getan
+
+
 def reap_orphans(host: Host, lo: int, hi: int, dry_run: bool = True,
                  protected: set[int] | None = None) -> list[str]:
     """Findet Testgaeste, die ein abgestuerzter Lauf zurueckgelassen hat.
@@ -358,6 +412,12 @@ def reap_orphans(host: Host, lo: int, hi: int, dry_run: bool = True,
             found.append(f"{kind}/{vmid}" + ("" if marked else " (unfertig)"))
             if not dry_run:
                 destroy(host, vmid, kind)
+
+    # Und was gar keine Konfiguration mehr hat, aber weiter Platz belegt.
+    for vmid, volids in sorted(reste_ohne_konfiguration(host, lo, hi, protected).items()):
+        found.append(f"reste/{vmid} ({len(volids)} Datentraeger)")
+        if not dry_run:
+            reste_entfernen(host, vmid, volids)
             break
     return found
 

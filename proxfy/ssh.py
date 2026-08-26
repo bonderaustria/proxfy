@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import dataclasses
+import os
+import pathlib
 import shlex
 import subprocess
 
@@ -20,6 +22,24 @@ class Result:
         if not self.ok:
             raise RuntimeError(f"{what} fehlgeschlagen (rc={self.rc}): {self.err.strip() or self.out.strip()}")
         return self
+
+
+def _multiplex_verzeichnis() -> str:
+    """Ort fuer die Steuerkanaele. Leer, wenn er sich nicht anlegen laesst.
+
+    Nur fuer den eigenen Benutzer lesbar: ueber diesen Kanal kaeme man ohne
+    Schluessel auf den Hypervisor.
+    """
+    try:
+        pfad = pathlib.Path(os.environ.get("XDG_RUNTIME_DIR") or "/run") / "proxfy-ssh"
+        pfad.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(pfad, 0o700)
+        return str(pfad)
+    except OSError:
+        return ""
+
+
+_MULTIPLEX = _multiplex_verzeichnis()
 
 
 class Host:
@@ -44,6 +64,14 @@ class Host:
 
     def _base(self) -> list[str]:
         cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
+        # Eine offene Verbindung wiederverwenden, statt fuer jedes Kommando neu
+        # anzuklopfen. Proxfy fragt die Oberflaeche alle paar Sekunden ab; ohne
+        # das sind das gut zwoelf vollstaendige Schluesseltausche je Minute,
+        # und die kosten den Hypervisor spuerbar Rechenzeit.
+        if _MULTIPLEX:
+            cmd += ["-o", "ControlMaster=auto",
+                    "-o", f"ControlPath={_MULTIPLEX}/%C",
+                    "-o", "ControlPersist=120"]
         if self.key_file:
             cmd += ["-i", self.key_file]
         if self.port != 22:
