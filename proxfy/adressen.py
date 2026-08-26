@@ -5,10 +5,10 @@ der Grund, warum sich im Modus 'routed' mehrere Gaeste gleichzeitig pruefen
 lassen - mit einer festen Adresse ging immer nur einer.
 
 Erlaubte Schreibweisen:
-    192.168.20.240              einzeln, Praefix aus der Vorgabe
-    192.168.20.240/24           einzeln mit Praefix
-    192.168.20.15-38            Bereich, Kurzform fuer das letzte Oktett
-    192.168.20.15-192.168.20.38 Bereich, vollstaendig
+    192.168.1.240              einzeln, Praefix aus der Vorgabe
+    192.168.1.240/24           einzeln mit Praefix
+    192.168.1.15-38            Bereich, Kurzform fuer das letzte Oktett
+    192.168.1.15-192.168.1.38 Bereich, vollstaendig
     beides zusaetzlich mit /24 am Ende
 """
 from __future__ import annotations

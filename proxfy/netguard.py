@@ -149,7 +149,7 @@ def plan_network(
 
     if mode == "routed":
         if not ip_cidr:
-            raise PreflightError("Modus 'routed' verlangt eine IP in CIDR-Notation, z.B. 192.168.20.240/24")
+            raise PreflightError("Modus 'routed' verlangt eine IP in CIDR-Notation, z.B. 192.168.1.240/24")
         if not skip_preflight:
             preflight_ip(host, ip_cidr, lan_bridge)
         return IpPlan(mode="routed", bridge=lan_bridge, mac=mac, ip_cidr=ip_cidr, gateway=gateway)

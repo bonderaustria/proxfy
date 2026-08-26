@@ -2,7 +2,7 @@
 # Legt einen Container fuer die Restore-Verifikation an und installiert alles
 # hinein. AUF DEM PROXMOX-HOST ausfuehren, im entpackten Quellverzeichnis.
 #
-#   bash create-lxc.sh --ip 192.168.20.35/24 --gw 192.168.20.1
+#   bash create-lxc.sh --ip 192.168.1.35/24 --gw 192.168.1.1
 #
 # Weitere Schalter:
 #   --vmid N        VMID des Containers (Vorgabe: naechste freie)
@@ -41,8 +41,8 @@ die() { printf 'FEHLER: %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" = "0" ] || die "Bitte als root ausfuehren."
 command -v pct >/dev/null 2>&1 || die "pct nicht gefunden - dieses Skript gehoert auf den PVE-Host."
-[ -n "$IP" ] || die "--ip fehlt, z. B. --ip 192.168.20.35/24"
-[ -n "$GW" ] || die "--gw fehlt, z. B. --gw 192.168.20.1"
+[ -n "$IP" ] || die "--ip fehlt, z. B. --ip 192.168.1.35/24"
+[ -n "$GW" ] || die "--gw fehlt, z. B. --gw 192.168.1.1"
 DNS="${DNS:-$GW}"
 
 # --- Vorgaben ermitteln ------------------------------------------------------

@@ -414,8 +414,8 @@ class Store:
         """Legt einen Eintrag an oder aendert ihn.
 
         Nimmt einzelne Adressen und Bereiche. Die Anzeigeform wird
-        vereinheitlicht, damit '192.168.20.15-192.168.20.38' und
-        '192.168.20.15-38' nicht zweimal nebeneinander stehen.
+        vereinheitlicht, damit '192.168.1.15-192.168.1.38' und
+        '192.168.1.15-38' nicht zweimal nebeneinander stehen.
         """
         e = adressen.zerlege(str(entry.get("ip_cidr", "")))
         gw = (entry.get("gateway") or "").strip() or None

@@ -6,7 +6,7 @@
 # an und ruft dieses Skript darin auf.
 #
 # Direkter Aufruf, im entpackten Quellverzeichnis:
-#   PVE_HOST=192.168.20.9 PVE_KEY=/root/.ssh/id_proxfy bash install.sh
+#   PVE_HOST=192.168.1.9 PVE_KEY=/root/.ssh/id_proxfy bash install.sh
 #   bash install.sh                      (auf dem Hypervisor selbst)
 #
 # Das Skript legt WEDER einen Zeitplan NOCH einen Cron-Eintrag an. Nach der

@@ -170,7 +170,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--vmid", type=int, help="Einzelnes Ziel, uebergeht die Konfiguration")
     p.add_argument("--mode", choices=["isolated", "routed"], default="isolated",
                    help="isolated = Bridge ohne Uplink (Standard); routed = echte IP im LAN")
-    p.add_argument("--ip", help="Ziel-IP in CIDR-Notation, z.B. 192.168.20.240/24 (Modus routed)")
+    p.add_argument("--ip", help="Ziel-IP in CIDR-Notation, z.B. 192.168.1.240/24 (Modus routed)")
     p.add_argument("--gateway", help="Gateway fuer Modus routed")
     p.add_argument("--skip-preflight", action="store_true",
                    help="IP-Preflight ueberspringen - NICHT verwenden, ausser die IP ist "
