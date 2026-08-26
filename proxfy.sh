@@ -9,6 +9,10 @@
 # Hypervisor ein und installiert Proxfy hinein. Nach dem Durchlauf ist die
 # Weboberflaeche erreichbar und wartet auf das erste Konto.
 #
+# Nur pruefen, ohne etwas anzulegen:
+#   PROXFY_DRY_RUN=1 PROXFY_IP=192.168.1.50/24 PROXFY_GW=192.168.1.1 \
+#     PROXFY_UNATTENDED=1 bash proxfy.sh
+#
 # Ohne Rueckfragen, mit Vorgaben:
 #   PROXFY_IP=192.168.1.50/24 PROXFY_GW=192.168.1.1 PROXFY_UNATTENDED=1 \
 #     bash -c "$(curl -fsSL .../proxfy.sh)"
@@ -105,6 +109,30 @@ if [ "${PROXFY_UNATTENDED:-0}" != "1" ]; then
     read -r ja </dev/tty || ja="j"
     case "${ja:-j}" in [nN]*) abbruch "Abgebrochen." ;; esac
     echo
+fi
+
+# --- Trockenlauf ---------------------------------------------------------------
+if [ "${PROXFY_DRY_RUN:-0}" = "1" ]; then
+    schritt "Trockenlauf - es wird nichts angelegt"
+    hinweis "Naechste freie Container-ID laut Proxmox: $VMID_VORGABE"
+    hinweis "Erkannte Bridge:  $BRIDGE_VORGABE"
+    hinweis "Erkannter Storage: $STORAGE_VORGABE"
+    hinweis "Erkanntes Gateway: $GW_VORGABE"
+    if pvesm status --content backup >/dev/null 2>&1; then
+        hinweis "Backup-Storages:   $(pvesm status --content backup 2>/dev/null | awk 'NR>1 {printf "%s ", $1}')"
+    fi
+    if pct status "$VMID" >/dev/null 2>&1 || qm status "$VMID" >/dev/null 2>&1; then
+        warnung "Container-ID $VMID ist bereits vergeben."
+    else
+        hinweis "Container-ID $VMID ist frei."
+    fi
+    if ping -c 1 -W 2 "$BARE_IP" >/dev/null 2>&1; then
+        warnung "$BARE_IP antwortet auf Ping - die Adresse ist belegt."
+    else
+        hinweis "$BARE_IP antwortet nicht - sieht frei aus."
+    fi
+    echo
+    exit 0
 fi
 
 # --- Quelle holen ------------------------------------------------------------
