@@ -62,6 +62,17 @@ class RestoreConfig:
 
 
 @dataclasses.dataclass
+class DatenbankConfig:
+    """Wohin Proxfy seine eigenen Daten schreibt.
+
+    Vorgabe ist der lokale Unix-Socket ohne Passwort: die Datenbank gehoert
+    einer Rolle, die genauso heisst wie das Konto des Dienstes. Damit steht
+    nirgends ein Zugang herum, den jemand mitlesen koennte.
+    """
+    dsn: str = "postgresql:///proxfy?host=/var/run/postgresql"
+
+
+@dataclasses.dataclass
 class AuthConfig:
     """Anbindung an den Anmeldedienst, der als eigener Prozess laeuft."""
     env_file: str = "/opt/proxfy/auth.env"
@@ -74,6 +85,7 @@ class Config:
     restore: RestoreConfig
     targets: list[dict]
     auth: AuthConfig = dataclasses.field(default_factory=AuthConfig)
+    datenbank: DatenbankConfig = dataclasses.field(default_factory=DatenbankConfig)
     # Nur einschalten, wenn wirklich ein Reverse Proxy davorsteht. Sonst koennte
     # sich jeder Aufrufer per Kopfzeile eine fremde Herkunftsadresse ausdenken
     # und damit die Anmeldesperre umgehen.
@@ -122,6 +134,7 @@ class Config:
             "host.host": self.host.host,
             "host.user": self.host.user,
             "host.key_file": self.host.key_file,
+            "datenbank.dsn": self.datenbank.dsn,
             "restore.backup_storage": self.restore.backup_storage,
             "restore.target_storage": self.restore.target_storage,
             "restore.isolated_bridge": self.restore.isolated_bridge,
@@ -146,6 +159,7 @@ class Config:
             restore=RestoreConfig(**raw.get("restore", {})),
             targets=raw.get("targets", []),
             auth=AuthConfig(**raw.get("auth", {})),
+            datenbank=DatenbankConfig(**raw.get("datenbank", {})),
             trust_forwarded_for=bool(raw.get("trust_forwarded_for", False)),
             public_url=str(raw.get("public_url", "") or ""),
             secure_cookies=bool(raw.get("secure_cookies", False)),

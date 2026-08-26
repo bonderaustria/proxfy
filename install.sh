@@ -48,6 +48,7 @@ command -v python3 >/dev/null 2>&1 || apt-get install -y -qq python3 >/dev/null
 python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)' \
     || die "Python ist zu alt, benoetigt wird 3.11 oder neuer."
 python3 -c 'import yaml' 2>/dev/null || { say "  python3-yaml"; apt-get install -y -qq python3-yaml >/dev/null; }
+python3 -c 'import psycopg' 2>/dev/null || { say "  python3-psycopg"; apt-get install -y -qq python3-psycopg >/dev/null; }
 command -v ssh      >/dev/null 2>&1 || apt-get install -y -qq openssh-client >/dev/null
 command -v openssl  >/dev/null 2>&1 || apt-get install -y -qq openssl >/dev/null
 command -v curl     >/dev/null 2>&1 || apt-get install -y -qq curl >/dev/null
@@ -80,6 +81,32 @@ if [ "$NODE_OK" = "0" ]; then
 fi
 say "  Node $(node --version), Python $(python3 -c 'import platform;print(platform.python_version())')"
 
+# --- Datenbank ---------------------------------------------------------------
+# PostgreSQL laeuft im selben Container. Zugriff ueber den lokalen Socket mit
+# peer-Authentifizierung: die Rolle heisst wie das Systemkonto des Dienstes, ein
+# Passwort gibt es damit weder zu setzen noch irgendwo abzulegen.
+if ! command -v psql >/dev/null 2>&1; then
+    say "Installiere PostgreSQL"
+    apt-get install -y -qq postgresql >/dev/null
+fi
+systemctl enable -q postgresql >/dev/null 2>&1 || true
+systemctl start postgresql
+
+say "Datenbank vorbereiten"
+DBROLLE="$(id -un)"
+_psql() { su -s /bin/sh postgres -c "psql -tAc \"$1\"" 2>/dev/null; }
+if [ "$(_psql "SELECT 1 FROM pg_roles WHERE rolname='$DBROLLE'")" != "1" ]; then
+    su -s /bin/sh postgres -c "createuser --superuser '$DBROLLE'"
+    say "  Rolle $DBROLLE angelegt"
+fi
+if [ "$(_psql "SELECT 1 FROM pg_database WHERE datname='proxfy'")" != "1" ]; then
+    su -s /bin/sh postgres -c "createdb -O '$DBROLLE' proxfy"
+    say "  Datenbank proxfy angelegt"
+else
+    say "  Datenbank proxfy besteht bereits"
+fi
+DSN="postgresql:///proxfy?host=/var/run/postgresql"
+
 # --- Dateien -----------------------------------------------------------------
 say "Dateien nach $DEST kopieren"
 mkdir -p "$DEST/proxfy/static" "$DEST/auth"
@@ -96,6 +123,11 @@ done; :
 # --- Geheimnisse -------------------------------------------------------------
 if [ -f "$DEST/auth.env" ]; then
     say "Bestehende auth.env bleibt unveraendert"
+    # Aeltere Installationen kennen nur die SQLite-Datei.
+    if ! grep -q '^PROXFY_AUTH_DSN=' "$DEST/auth.env"; then
+        printf 'PROXFY_AUTH_DSN=%s\n' "$DSN" >> "$DEST/auth.env"
+        say "  Verbindung zur Datenbank ergaenzt"
+    fi
 else
     say "Erzeuge Geheimnisse"
     umask 077
@@ -105,7 +137,7 @@ PROXFY_INTERNAL_SECRET=$(openssl rand -hex 32)
 BETTER_AUTH_URL=http://$PUBLIC_IP:$PORT
 PROXFY_BASE_ORIGINS=http://$PUBLIC_IP:$PORT,http://$(hostname):$PORT,http://localhost:$PORT
 PROXFY_TRUSTED_ORIGINS=http://$PUBLIC_IP:$PORT,http://$(hostname):$PORT,http://localhost:$PORT
-PROXFY_AUTH_DB=$DEST/auth.db
+PROXFY_AUTH_DSN=$DSN
 PROXFY_AUTH_PORT=$AUTH_PORT
 ENV
     chmod 600 "$DEST/auth.env"
@@ -124,6 +156,10 @@ say "Lege das Datenbankschema an"
 # --- Konfiguration -----------------------------------------------------------
 if [ -f "$DEST/config.yaml" ]; then
     say "Bestehende config.yaml bleibt unveraendert"
+    if ! grep -q '^datenbank:' "$DEST/config.yaml"; then
+        printf '\ndatenbank:\n  dsn: %s\n' "$DSN" >> "$DEST/config.yaml"
+        say "  Verbindung zur Datenbank ergaenzt"
+    fi
 else
     say "Konfiguration erzeugen"
     if [ "$MODE" = "lokal" ]; then
@@ -161,6 +197,11 @@ auth:
   env_file: $DEST/auth.env
   port: $AUTH_PORT
 
+datenbank:
+  # Lokaler Socket, ohne Passwort - die Datenbank gehoert der Rolle, unter der
+  # der Dienst laeuft.
+  dsn: $DSN
+
 # Nur einschalten, wenn wirklich ein Reverse Proxy davorsteht. Sonst koennte
 # sich jeder eine fremde Herkunftsadresse ausdenken und die Anmeldesperre
 # umgehen.
@@ -170,6 +211,26 @@ trust_forwarded_for: false
 targets: []
 CFG
     say "  Backup-Quelle $BACKUP_STORE, Ziel $TARGET_STORE"
+fi
+
+# --- Bestehende Daten uebernehmen --------------------------------------------
+# Nur beim ersten Mal: liegt in PostgreSQL schon etwas, wird nichts angefasst.
+# Die SQLite-Dateien bleiben liegen - der Rueckweg ist eine Zeile in config.yaml.
+if [ -f "$DEST/proxfy.db" ]; then
+    say "Vorhandene Daten uebernehmen"
+    ( cd "$DEST" && python3 -c "
+from proxfy import umzug
+from proxfy.store import Store
+dsn = '$DSN'
+# Legt das Schema an - ohne die Tabellen haette der Umzug kein Ziel.
+Store(dsn)
+bilanz = umzug.uebernehmen(dsn, '$DEST/proxfy.db', '$DEST/auth.db')
+if bilanz:
+    for tabelle, n in sorted(bilanz.items()):
+        print(f'    {tabelle}: {n}')
+else:
+    print('    Nichts zu uebernehmen - in der Datenbank liegen bereits Daten.')
+" ) || die "Umzug der Daten fehlgeschlagen. Die SQLite-Dateien sind unveraendert."
 fi
 
 # --- Dienste -----------------------------------------------------------------
@@ -205,7 +266,7 @@ Wants=network-online.target proxfy-auth.service
 Type=simple
 WorkingDirectory=$DEST
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 -m proxfy.cli --config $DEST/config.yaml serve --port $PORT --db $DEST/proxfy.db
+ExecStart=/usr/bin/python3 -m proxfy.cli --config $DEST/config.yaml serve --port $PORT --db $DSN
 Restart=on-failure
 RestartSec=5
 
@@ -235,7 +296,7 @@ Fertig.
   Weboberflaeche   http://$PUBLIC_IP:$PORT/
   Konfiguration    $DEST/config.yaml
   Geheimnisse      $DEST/auth.env   (nur fuer root lesbar)
-  Datenbanken      $DEST/proxfy.db, $DEST/auth.db
+  Datenbank        PostgreSQL, lokal ($DSN)
   Deinstallation   bash $DEST/uninstall.sh
 
 Der Anmeldedienst lauscht nur auf 127.0.0.1:$AUTH_PORT und ist von aussen

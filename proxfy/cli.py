@@ -182,14 +182,15 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("serve", help="Weboberflaeche starten")
     p.add_argument("--bind", default="0.0.0.0", help="Adresse, an die gebunden wird")
     p.add_argument("--port", type=int, default=8099)
-    p.add_argument("--db", default="proxfy.db", help="SQLite-Datei fuer Verlauf und Profile")
+    p.add_argument("--db", default="postgresql:///proxfy?host=/var/run/postgresql",
+               help="Verbindung zur Datenbank fuer Verlauf und Profile")
     p.set_defaults(fn=cmd_serve)
 
     p = sub.add_parser("config", help="Einstellungen anzeigen, setzen oder zuruecksetzen")
     p.add_argument("aktion", choices=["show", "set", "reset"])
     p.add_argument("schluessel", nargs="?", help="z. B. host.host")
     p.add_argument("wert", nargs="?")
-    p.add_argument("--db", default="/opt/proxfy/proxfy.db")
+    p.add_argument("--db", default="postgresql:///proxfy?host=/var/run/postgresql")
     p.set_defaults(fn=cmd_config)
 
     p = sub.add_parser("reap", help="Verwaiste Testgaeste aus abgestuerzten Laeufen aufraeumen")

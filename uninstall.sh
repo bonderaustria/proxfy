@@ -134,12 +134,26 @@ if [ -d "$DEST" ]; then
     if [ "$KEEP_DATA" = "1" ]; then
         say "Programmdateien entfernen, Daten behalten"
         rm -rf "$DEST/proxfy" "$DEST/auth/node_modules" "$DEST/auth"/*.js "$DEST/auth/package.json"
-        say "  behalten: $DEST/config.yaml, $DEST/proxfy.db, $DEST/auth.db, $DEST/auth.env"
-    elif ask "Verzeichnis $DEST samt Konfiguration, Verlaufs- UND Benutzerdatenbank loeschen?"; then
+        say "  behalten: $DEST/config.yaml, $DEST/auth.env und die Datenbank proxfy"
+    elif ask "Verzeichnis $DEST samt Konfiguration loeschen?"; then
         rm -rf "$DEST"
         say "  $DEST geloescht"
     else
         say "  $DEST bleibt bestehen"
+    fi
+fi
+
+# --- Datenbank ---------------------------------------------------------------
+# Getrennt gefragt: hier liegen Konten und Verlauf. Wer die Programmdateien
+# entfernt, will das nicht zwangslaeufig mitverlieren. PostgreSQL selbst bleibt
+# in jedem Fall stehen - es koennte anderes darin liegen.
+if [ "$KEEP_DATA" != "1" ] && command -v psql >/dev/null 2>&1; then
+    if su -s /bin/sh postgres -c "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='proxfy'\"" 2>/dev/null | grep -q 1; then
+        if ask "Datenbank 'proxfy' mit Konten, Zeitplaenen und Verlauf loeschen?"; then
+            su -s /bin/sh postgres -c "dropdb proxfy" && say "  Datenbank proxfy geloescht"
+        else
+            say "  Datenbank proxfy bleibt bestehen"
+        fi
     fi
 fi
 
@@ -148,5 +162,5 @@ cat <<DONE
 Deinstallation abgeschlossen.
 
 Nicht angefasst wurden: eure Backups, der Backup-Storage, alle produktiven
-VMs und Container sowie das Paket iputils-arping.
+VMs und Container, das Paket iputils-arping sowie PostgreSQL selbst.
 DONE

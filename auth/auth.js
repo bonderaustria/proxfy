@@ -1,7 +1,7 @@
 /**
  * Better-Auth-Instanz.
  *
- * Sitzungen liegen serverseitig in SQLite, der Browser bekaeme nur eine
+ * Sitzungen liegen serverseitig in PostgreSQL, der Browser bekaeme nur eine
  * HttpOnly-Cookie-Kennung. Es gibt bewusst keine Token im localStorage und
  * keine JWTs - eine Sitzung laesst sich damit jederzeit serverseitig beenden.
  *
@@ -11,9 +11,11 @@
  */
 import { betterAuth } from "better-auth";
 import { twoFactor } from "better-auth/plugins";
-import Database from "better-sqlite3";
+import { Pool } from "pg";
 
-const DB_PATH = process.env.PROXFY_AUTH_DB || "/opt/proxfy/auth.db";
+// Ohne Passwort ueber den lokalen Socket: die Datenbank gehoert der Rolle,
+// unter der der Dienst laeuft. Damit steht nirgends ein Zugang herum.
+const DSN = process.env.PROXFY_AUTH_DSN || "postgresql:///proxfy?host=/var/run/postgresql";
 
 // Die oeffentliche Adresse, unter der der Browser die Anwendung sieht - also
 // die der Python-Anwendung, nicht die dieses Dienstes.
@@ -21,7 +23,7 @@ const PUBLIC_URL = process.env.BETTER_AUTH_URL || "http://localhost:8099";
 
 export const auth = betterAuth({
   appName: "Proxfy",
-  database: new Database(DB_PATH),
+  database: new Pool({ connectionString: DSN }),
   baseURL: PUBLIC_URL,
   basePath: "/api/auth",
   secret: process.env.BETTER_AUTH_SECRET,
