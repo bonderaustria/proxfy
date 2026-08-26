@@ -113,6 +113,7 @@ Soll trotz vorhandener Installation eine zweite, unabhängige entstehen:
 PROXFY_NEU=1 PROXFY_IP=192.168.1.51/24 PROXFY_GW=192.168.1.1 \
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/bonderaustria/proxfy/main/proxfy.sh)"
 ```
+
 ## Aufbau
 
 Proxfy läuft in einem eigenen LXC, nicht auf dem Hypervisor — dort ist Python
