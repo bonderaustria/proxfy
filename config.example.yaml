@@ -1,0 +1,38 @@
+# Proxfy - Grundeinstellungen.
+#
+# Diese Datei liefert die Ausgangswerte. Was in der Oberflaeche geaendert wird,
+# liegt in der Datenbank und ueberlagert sie. Bleibt die Oberflaeche einmal
+# unerreichbar, raeumt "proxfy config reset" die Ueberlagerung weg und es gilt
+# wieder, was hier steht.
+#
+# Der Installer legt eine passende config.yaml selbst an - diese Datei ist nur
+# als Muster gedacht.
+
+host:
+  # "local", wenn Proxfy direkt auf dem Hypervisor laeuft.
+  # Sonst die Adresse des Hypervisors; der Zugriff laeuft dann ueber SSH.
+  host: 192.168.1.10
+  user: root
+  key_file: /root/.ssh/id_proxfy
+
+restore:
+  backup_storage: PBS          # wo die Backups liegen (PBS oder Verzeichnis)
+  target_storage: local-lvm    # wohin der Testgast wiederhergestellt wird
+  isolated_bridge: vmbr9       # Bridge ohne Uplink, wird zur Laufzeit angelegt
+  lan_bridge: vmbr0            # nur fuer den Modus "geroutet"
+  boot_timeout: 300            # Sekunden, bis ein Container erreichbar sein muss
+  agent_timeout: 240           # Sekunden, bis der QEMU-Guest-Agent antwortet
+
+auth:
+  env_file: /opt/proxfy/auth.env
+  port: 8100                   # Anmeldedienst, lauscht nur auf 127.0.0.1
+
+# Nur einschalten, wenn wirklich ein Reverse Proxy davorsteht. Sonst koennte
+# sich jeder Aufrufer per Kopfzeile eine fremde Herkunftsadresse ausdenken und
+# damit die Anmeldesperre umgehen.
+trust_forwarded_for: false
+
+# Nur fuer den Sammellauf auf der Kommandozeile ("proxfy.cli run" ohne --vmid).
+# Diese Liste loest von sich aus NICHTS aus - es gibt keinen eingebauten
+# Zeitplan.
+targets: []

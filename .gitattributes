@@ -1,0 +1,8 @@
+# Zeilenenden bleiben LF. Ein Shell-Skript mit CRLF scheitert auf Linux mit
+# "\r: command not found" - und Shell-Skripte sind hier der Installationsweg.
+* text=auto eol=lf
+*.sh   text eol=lf
+*.py   text eol=lf
+*.js   text eol=lf
+*.yaml text eol=lf
+*.md   text eol=lf

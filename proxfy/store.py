@@ -1,0 +1,563 @@
+"""Ablage fuer Profile, Laufhistorie, Zeitplaene und lebende Testgaeste.
+
+SQLite, keine Abhaengigkeiten.
+
+Die Tabelle 'leases' ist sicherheitsrelevant: sie ist das Verzeichnis aller
+Testgaeste, die einen Lauf ueberlebt haben. Ohne sie wuesste niemand, welche
+Scratch-VMID wann wieder verschwinden muss.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import ipaddress
+import json
+import pathlib
+import sqlite3
+import time
+import threading
+
+from . import adressen
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS targets (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    vmid       INTEGER NOT NULL,
+    kind       TEXT NOT NULL DEFAULT 'ct',
+    mode       TEXT NOT NULL DEFAULT 'isolated',
+    ip         TEXT,
+    gateway    TEXT,
+    checks     TEXT NOT NULL DEFAULT '[]',
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    created    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS jobs (
+    job_id     TEXT PRIMARY KEY,
+    vmid       INTEGER NOT NULL,
+    kind       TEXT,
+    mode       TEXT,
+    snapshot   TEXT,
+    verdict    TEXT,
+    duration   REAL,
+    started    TEXT,
+    report     TEXT,
+    log        TEXT,
+    source     TEXT DEFAULT 'manuell',
+    schedule_id INTEGER
+);
+CREATE INDEX IF NOT EXISTS jobs_vmid_started ON jobs(vmid, started DESC);
+
+-- Testgaeste, die den Lauf ueberlebt haben und noch laufen.
+CREATE TABLE IF NOT EXISTS leases (
+    scratch_vmid INTEGER PRIMARY KEY,
+    kind         TEXT NOT NULL,
+    job_id       TEXT,
+    source_vmid  INTEGER,
+    source_name  TEXT,
+    mode         TEXT,
+    ip           TEXT,
+    keep         TEXT NOT NULL,          -- 'ttl' | 'manual'
+    created      TEXT NOT NULL,
+    expires_at   TEXT,                   -- NULL bei 'manual'
+    state        TEXT NOT NULL DEFAULT 'aktiv',
+    node         TEXT,
+    note         TEXT
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated    TEXT NOT NULL,
+    updated_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pending_rollback (
+    token   TEXT PRIMARY KEY,
+    vorher  TEXT NOT NULL,
+    faellig TEXT NOT NULL,
+    wer     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ip_pool (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    label    TEXT NOT NULL,
+    ip_cidr  TEXT NOT NULL UNIQUE,   -- Anzeigeform, auch fuer Bereiche
+    ip_von   TEXT,                   -- erste Adresse des Bereichs
+    ip_bis   TEXT,                   -- letzte Adresse (bei Einzeladressen gleich)
+    praefix  INTEGER,
+    gateway  TEXT,
+    note     TEXT,
+    created  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts         REAL NOT NULL,
+    ip         TEXT NOT NULL,
+    identifier TEXT,
+    ok         INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS attempts_ts ON login_attempts(ts);
+CREATE INDEX IF NOT EXISTS attempts_ip ON login_attempts(ip, ts);
+CREATE INDEX IF NOT EXISTS attempts_id ON login_attempts(identifier, ts);
+
+CREATE TABLE IF NOT EXISTS schedules (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL,
+    enabled      INTEGER NOT NULL DEFAULT 1,
+    vmids        TEXT NOT NULL DEFAULT '[]',
+    mode         TEXT NOT NULL DEFAULT 'isolated',
+    ip           TEXT,
+    gateway      TEXT,
+    checks       TEXT NOT NULL DEFAULT '[]',
+    keep         TEXT NOT NULL DEFAULT 'destroy',
+    ttl_minutes  INTEGER,
+    backup_storage TEXT,
+    target_storage TEXT,
+    node         TEXT,
+    at_time      TEXT NOT NULL DEFAULT '03:00',   -- HH:MM Ortszeit
+    weekdays     TEXT NOT NULL DEFAULT '[0,1,2,3,4,5,6]',
+    last_run     TEXT,
+    created      TEXT NOT NULL
+);
+"""
+
+
+def _now() -> dt.datetime:
+    return dt.datetime.now().astimezone()
+
+
+def _iso(t: dt.datetime) -> str:
+    return t.isoformat(timespec="seconds")
+
+
+class Store:
+    def __init__(self, path: str | pathlib.Path):
+        self.path = str(path)
+        self._lock = threading.Lock()
+        with self._conn() as c:
+            c.executescript(_SCHEMA)
+            # Nachtraeglich ergaenzte Spalten vertragen kein CREATE TABLE mehr.
+            cols = {r["name"] for r in c.execute("PRAGMA table_info(jobs)")}
+            if "source" not in cols:
+                c.execute("ALTER TABLE jobs ADD COLUMN source TEXT DEFAULT 'manuell'")
+            if "schedule_id" not in cols:
+                c.execute("ALTER TABLE jobs ADD COLUMN schedule_id INTEGER")
+            lcols = {r["name"] for r in c.execute("PRAGMA table_info(leases)")}
+            if "node" not in lcols:
+                c.execute("ALTER TABLE leases ADD COLUMN node TEXT")
+            icols = {r["name"] for r in c.execute("PRAGMA table_info(ip_pool)")}
+            for col, typ in (("ip_von", "TEXT"), ("ip_bis", "TEXT"), ("praefix", "INTEGER")):
+                if col not in icols:
+                    c.execute(f"ALTER TABLE ip_pool ADD COLUMN {col} {typ}")
+            scols = {r["name"] for r in c.execute("PRAGMA table_info(schedules)")}
+            for col in ("backup_storage", "target_storage", "node"):
+                if col not in scols:
+                    c.execute(f"ALTER TABLE schedules ADD COLUMN {col} TEXT")
+            if "ip_pool_id" not in scols:
+                c.execute("ALTER TABLE schedules ADD COLUMN ip_pool_id INTEGER")
+
+    def _conn(self) -> sqlite3.Connection:
+        c = sqlite3.connect(self.path, timeout=15)
+        c.row_factory = sqlite3.Row
+        return c
+
+    # --- Zielprofile ---------------------------------------------------------
+
+    @staticmethod
+    def _target_row(r: sqlite3.Row) -> dict:
+        d = dict(r)
+        d["checks"] = json.loads(d["checks"] or "[]")
+        d["enabled"] = bool(d["enabled"])
+        return d
+
+    def list_targets(self) -> list[dict]:
+        with self._lock, self._conn() as c:
+            rows = c.execute("SELECT * FROM targets ORDER BY vmid").fetchall()
+        return [self._target_row(r) for r in rows]
+
+    def save_target(self, t: dict) -> dict:
+        fields = (t.get("name") or f"VMID {t['vmid']}", int(t["vmid"]), t.get("kind", "ct"),
+                  t.get("mode", "isolated"), t.get("ip"), t.get("gateway"),
+                  json.dumps(t.get("checks", []), ensure_ascii=False),
+                  1 if t.get("enabled", True) else 0)
+        with self._lock, self._conn() as c:
+            if t.get("id"):
+                c.execute("UPDATE targets SET name=?,vmid=?,kind=?,mode=?,ip=?,gateway=?,"
+                          "checks=?,enabled=? WHERE id=?", (*fields, int(t["id"])))
+                tid = int(t["id"])
+            else:
+                cur = c.execute("INSERT INTO targets (name,vmid,kind,mode,ip,gateway,checks,"
+                                "enabled,created) VALUES (?,?,?,?,?,?,?,?,?)",
+                                (*fields, _iso(_now())))
+                tid = int(cur.lastrowid)
+            row = c.execute("SELECT * FROM targets WHERE id=?", (tid,)).fetchone()
+        return self._target_row(row)
+
+    def delete_target(self, tid: int) -> None:
+        with self._lock, self._conn() as c:
+            c.execute("DELETE FROM targets WHERE id=?", (int(tid),))
+
+    # --- Laeufe --------------------------------------------------------------
+
+    def save_job(self, report: dict, log: str, source: str = "manuell",
+                 schedule_id: int | None = None) -> None:
+        with self._lock, self._conn() as c:
+            c.execute("INSERT OR REPLACE INTO jobs (job_id,vmid,kind,mode,snapshot,verdict,"
+                      "duration,started,report,log,source,schedule_id) "
+                      "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (report["job_id"], report["source_vmid"], report.get("kind"),
+                       report.get("mode"), report.get("snapshot"), report.get("verdict"),
+                       report.get("duration"), report.get("started"),
+                       json.dumps(report, ensure_ascii=False), log, source, schedule_id))
+
+    def list_jobs(self, limit: int = 100, vmid: int | None = None,
+                  schedule_id: int | None = None) -> list[dict]:
+        """Laufhistorie, wahlweise auf einen Gast oder einen Zeitplan eingegrenzt."""
+        sql = ("SELECT job_id,vmid,kind,mode,snapshot,verdict,duration,started,source,"
+               "schedule_id FROM jobs")
+        args: list = []
+        if vmid is not None:
+            sql += " WHERE vmid=?"
+            args.append(int(vmid))
+        elif schedule_id is not None:
+            sql += " WHERE schedule_id=?"
+            args.append(int(schedule_id))
+        sql += " ORDER BY started DESC LIMIT ?"
+        args.append(limit)
+        with self._lock, self._conn() as c:
+            rows = c.execute(sql, args).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_job(self, job_id: str) -> dict | None:
+        with self._lock, self._conn() as c:
+            row = c.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["report"] = json.loads(d["report"] or "{}")
+        return d
+
+    def last_verdicts(self) -> dict[int, dict]:
+        """Neuestes Ergebnis je VMID - fuer die Ampel in der Uebersicht."""
+        with self._lock, self._conn() as c:
+            rows = c.execute(
+                "SELECT vmid, verdict, started, duration, job_id FROM jobs j WHERE started = "
+                "(SELECT MAX(started) FROM jobs WHERE vmid = j.vmid)").fetchall()
+        return {int(r["vmid"]): dict(r) for r in rows}
+
+    # --- Lebende Testgaeste --------------------------------------------------
+
+    def add_lease(self, lease: dict) -> None:
+        with self._lock, self._conn() as c:
+            c.execute("INSERT OR REPLACE INTO leases (scratch_vmid,kind,job_id,source_vmid,"
+                      "source_name,mode,ip,keep,created,expires_at,state,note,node) "
+                      "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (int(lease["scratch_vmid"]), lease["kind"], lease.get("job_id"),
+                       lease.get("source_vmid"), lease.get("source_name"), lease.get("mode"),
+                       lease.get("ip"), lease["keep"], _iso(_now()),
+                       lease.get("expires_at"), "aktiv", lease.get("note"), lease.get("node")))
+
+    def list_leases(self, active_only: bool = True) -> list[dict]:
+        sql = "SELECT * FROM leases"
+        if active_only:
+            sql += " WHERE state='aktiv'"
+        sql += " ORDER BY created DESC"
+        with self._lock, self._conn() as c:
+            return [dict(r) for r in c.execute(sql).fetchall()]
+
+    def get_lease(self, scratch_vmid: int) -> dict | None:
+        with self._lock, self._conn() as c:
+            row = c.execute("SELECT * FROM leases WHERE scratch_vmid=?",
+                            (int(scratch_vmid),)).fetchone()
+        return dict(row) if row else None
+
+    def release_lease(self, scratch_vmid: int, note: str = "") -> None:
+        with self._lock, self._conn() as c:
+            c.execute("UPDATE leases SET state='entfernt', note=? WHERE scratch_vmid=?",
+                      (note or None, int(scratch_vmid)))
+
+    def due_leases(self) -> list[dict]:
+        """Testgaeste, deren Frist abgelaufen ist."""
+        now = _iso(_now())
+        with self._lock, self._conn() as c:
+            rows = c.execute("SELECT * FROM leases WHERE state='aktiv' AND expires_at IS NOT NULL "
+                             "AND expires_at <= ?", (now,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def extend_lease(self, scratch_vmid: int, minutes: int) -> dict | None:
+        lease = self.get_lease(scratch_vmid)
+        if not lease or lease["state"] != "aktiv":
+            return None
+        base = _now()
+        if lease.get("expires_at"):
+            try:
+                cur = dt.datetime.fromisoformat(lease["expires_at"])
+                base = max(base, cur)
+            except ValueError:
+                pass
+        new_exp = _iso(base + dt.timedelta(minutes=int(minutes)))
+        with self._lock, self._conn() as c:
+            c.execute("UPDATE leases SET expires_at=?, keep='ttl' WHERE scratch_vmid=?",
+                      (new_exp, int(scratch_vmid)))
+        return self.get_lease(scratch_vmid)
+
+    def leased_ips(self) -> set[str]:
+        """Adressen, die gerade von lebenden Testgaesten belegt sind."""
+        out = set()
+        for l in self.list_leases():
+            if l.get("ip"):
+                out.add(str(l["ip"]).split("/")[0])
+        return out
+    # --- Anmeldeversuche -----------------------------------------------------
+    # Grundlage fuer die gestaffelte Bremse und die Sperre. Bewusst hier und
+    # nicht im Anmeldedienst: hier ist die echte Herkunfts-IP bekannt.
+
+    def add_login_attempt(self, ip: str, identifier: str, ok: bool) -> None:
+        with self._lock, self._conn() as c:
+            c.execute("INSERT INTO login_attempts (ts, ip, identifier, ok) VALUES (?,?,?,?)",
+                      (time.time(), ip or "?", (identifier or "").lower() or None,
+                       1 if ok else 0))
+            # Alles aelter als einen Tag ist fuer die Entscheidung ohne Belang.
+            c.execute("DELETE FROM login_attempts WHERE ts < ?", (time.time() - 86400,))
+
+    def count_failures(self, ip: str | None = None, identifier: str | None = None,
+                       seconds: int = 900) -> int:
+        """Fehlversuche im Zeitfenster, seit dem letzten Erfolg."""
+        since = time.time() - seconds
+        if ip:
+            where, arg = "ip=?", ip
+        elif identifier:
+            where, arg = "identifier=?", identifier.lower()
+        else:
+            return 0
+        with self._lock, self._conn() as c:
+            row = c.execute(
+                f"SELECT ts FROM login_attempts WHERE {where} AND ok=1 AND ts>=? "
+                "ORDER BY ts DESC LIMIT 1", (arg, since)).fetchone()
+            floor = max(since, row["ts"] if row else since)
+            n = c.execute(
+                f"SELECT count(*) AS n FROM login_attempts WHERE {where} AND ok=0 AND ts>?",
+                (arg, floor)).fetchone()["n"]
+        return int(n)
+
+    def lock_remaining(self, ip: str, identifier: str, seconds: int) -> float:
+        """Wie lange die Sperre noch gilt - gerechnet ab dem letzten Fehlversuch."""
+        with self._lock, self._conn() as c:
+            row = c.execute(
+                "SELECT max(ts) AS ts FROM login_attempts WHERE ok=0 AND (ip=? OR identifier=?)",
+                (ip or "?", (identifier or "").lower())).fetchone()
+        if not row or not row["ts"]:
+            return 0.0
+        return max(0.0, (row["ts"] + seconds) - time.time())
+
+    def clear_failures(self, ip: str, identifier: str) -> None:
+        """Nach erfolgreicher Anmeldung faengt die Zaehlung von vorn an."""
+        with self._lock, self._conn() as c:
+            c.execute("DELETE FROM login_attempts WHERE ok=0 AND (ip=? OR identifier=?)",
+                      (ip or "?", (identifier or "").lower()))
+
+    def unlock(self, ip: str | None = None, identifier: str | None = None) -> int:
+        """Hebt eine Anmeldesperre auf.
+
+        Notwendig, weil sich sonst niemand selbst aus einer Sperre befreien
+        kann - ausser ueber die Datenbank. Aufrufen darf das nur, wer bereits
+        angemeldet ist.
+        """
+        with self._lock, self._conn() as c:
+            if ip:
+                n = c.execute("DELETE FROM login_attempts WHERE ok=0 AND ip=?", (ip,)).rowcount
+            elif identifier:
+                n = c.execute("DELETE FROM login_attempts WHERE ok=0 AND identifier=?",
+                              (identifier.lower(),)).rowcount
+            else:
+                n = c.execute("DELETE FROM login_attempts WHERE ok=0").rowcount
+        return int(n or 0)
+
+    def recent_logins(self, limit: int = 50) -> list[dict]:
+        """Letzte Anmeldeversuche - fuer die Sicht in den Einstellungen."""
+        with self._lock, self._conn() as c:
+            rows = c.execute(
+                "SELECT ts, ip, identifier, ok FROM login_attempts "
+                "ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
+        return [{"ts": dt.datetime.fromtimestamp(r["ts"]).astimezone().isoformat(
+                     timespec="seconds"),
+                 "ip": r["ip"], "identifier": r["identifier"], "ok": bool(r["ok"])}
+                for r in rows]
+
+    # --- Hinterlegte Test-Adressen -------------------------------------------
+    # Damit nicht jedes Mal jemand eine freie IP suchen und abtippen muss.
+
+    def list_ips(self) -> list[dict]:
+        with self._lock, self._conn() as c:
+            rows = c.execute("SELECT * FROM ip_pool ORDER BY id").fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            # Aeltere Eintraege haben die zerlegten Spalten noch nicht.
+            try:
+                e = adressen.zerlege(d["ip_cidr"])
+                d["von"], d["bis"] = str(e.von), str(e.bis)
+                d["praefix"] = e.praefix
+                d["anzahl"] = e.anzahl
+                d["ist_bereich"] = e.ist_bereich
+                d["anzeige"] = e.anzeige()
+            except adressen.AdressFehler:
+                d["anzahl"] = 1
+                d["ist_bereich"] = False
+                d["anzeige"] = d["ip_cidr"]
+            out.append(d)
+        return out
+
+    def save_ip(self, entry: dict) -> dict:
+        """Legt einen Eintrag an oder aendert ihn.
+
+        Nimmt einzelne Adressen und Bereiche. Die Anzeigeform wird
+        vereinheitlicht, damit '192.168.20.15-192.168.20.38' und
+        '192.168.20.15-38' nicht zweimal nebeneinander stehen.
+        """
+        e = adressen.zerlege(str(entry.get("ip_cidr", "")))
+        gw = (entry.get("gateway") or "").strip() or None
+        if gw:
+            ipaddress.ip_address(gw)
+
+        anzeige = e.anzeige()
+        fields = (entry.get("label") or str(e.von), anzeige,
+                  str(e.von), str(e.bis), e.praefix, gw, entry.get("note"))
+        with self._lock, self._conn() as c:
+            if entry.get("id"):
+                c.execute("UPDATE ip_pool SET label=?,ip_cidr=?,ip_von=?,ip_bis=?,"
+                          "praefix=?,gateway=?,note=? WHERE id=?",
+                          (*fields, int(entry["id"])))
+                rid = int(entry["id"])
+            else:
+                cur = c.execute("INSERT INTO ip_pool (label,ip_cidr,ip_von,ip_bis,praefix,"
+                                "gateway,note,created) VALUES (?,?,?,?,?,?,?,?)",
+                                (*fields, _iso(_now())))
+                rid = int(cur.lastrowid)
+            row = c.execute("SELECT * FROM ip_pool WHERE id=?", (rid,)).fetchone()
+        return dict(row)
+
+    def get_ip(self, rid: int) -> dict | None:
+        with self._lock, self._conn() as c:
+            row = c.execute("SELECT * FROM ip_pool WHERE id=?", (int(rid),)).fetchone()
+        return dict(row) if row else None
+
+    def delete_ip(self, rid: int) -> None:
+        with self._lock, self._conn() as c:
+            c.execute("DELETE FROM ip_pool WHERE id=?", (int(rid),))
+
+
+    # --- Einstellungen -------------------------------------------------------
+    # Die Datei liefert die Ausgangswerte, die Datenbank ueberlagert sie. So
+    # bleibt eine funktionierende Grundeinstellung erhalten, auch wenn in der
+    # Oberflaeche etwas verstellt wurde.
+
+    def get_settings(self) -> dict:
+        with self._lock, self._conn() as c:
+            rows = c.execute("SELECT key, value FROM settings").fetchall()
+        out = {}
+        for r in rows:
+            try:
+                out[r["key"]] = json.loads(r["value"])
+            except json.JSONDecodeError:
+                out[r["key"]] = r["value"]
+        return out
+
+    def set_settings(self, werte: dict, wer: str = "") -> None:
+        now = _iso(_now())
+        with self._lock, self._conn() as c:
+            for k, v in werte.items():
+                c.execute("INSERT INTO settings (key, value, updated, updated_by) "
+                          "VALUES (?,?,?,?) ON CONFLICT(key) DO UPDATE SET "
+                          "value=excluded.value, updated=excluded.updated, "
+                          "updated_by=excluded.updated_by",
+                          (k, json.dumps(v, ensure_ascii=False), now, wer))
+
+    def clear_settings(self, keys: list[str] | None = None) -> None:
+        """Setzt auf die Werte der Datei zurueck."""
+        with self._lock, self._conn() as c:
+            if keys:
+                c.executemany("DELETE FROM settings WHERE key=?", [(k,) for k in keys])
+            else:
+                c.execute("DELETE FROM settings")
+
+    # --- Ruecknahme gefaehrlicher Aenderungen --------------------------------
+    # Wer Port, Bindung oder Cookie-Verhalten verstellt, kann sich aussperren.
+    # Deshalb wird der vorherige Stand hinterlegt und selbsttaetig
+    # zurueckgenommen, falls niemand die Aenderung binnen der Frist bestaetigt.
+
+    def arm_rollback(self, vorher: dict, minuten: int, wer: str) -> str:
+        token = _iso(_now())
+        with self._lock, self._conn() as c:
+            c.execute("DELETE FROM pending_rollback")
+            c.execute("INSERT INTO pending_rollback (token, vorher, faellig, wer) "
+                      "VALUES (?,?,?,?)",
+                      (token, json.dumps(vorher, ensure_ascii=False),
+                       _iso(_now() + dt.timedelta(minutes=minuten)), wer))
+        return token
+
+    def pending_rollback(self) -> dict | None:
+        with self._lock, self._conn() as c:
+            row = c.execute("SELECT * FROM pending_rollback LIMIT 1").fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["vorher"] = json.loads(d["vorher"] or "{}")
+        return d
+
+    def clear_rollback(self) -> None:
+        with self._lock, self._conn() as c:
+            c.execute("DELETE FROM pending_rollback")
+
+    # --- Zeitplaene ----------------------------------------------------------
+
+    @staticmethod
+    def _sched_row(r: sqlite3.Row) -> dict:
+        d = dict(r)
+        d["vmids"] = json.loads(d["vmids"] or "[]")
+        d["checks"] = json.loads(d["checks"] or "[]")
+        d["weekdays"] = json.loads(d["weekdays"] or "[]")
+        d["enabled"] = bool(d["enabled"])
+        return d
+
+    def list_schedules(self) -> list[dict]:
+        with self._lock, self._conn() as c:
+            rows = c.execute("SELECT * FROM schedules ORDER BY at_time").fetchall()
+        return [self._sched_row(r) for r in rows]
+
+    def save_schedule(self, s: dict) -> dict:
+        fields = (s.get("name") or "Zeitplan",
+                  1 if s.get("enabled", True) else 0,
+                  json.dumps([int(v) for v in s.get("vmids", [])]),
+                  s.get("mode", "isolated"), s.get("ip"), s.get("gateway"),
+                  json.dumps(s.get("checks", []), ensure_ascii=False),
+                  s.get("keep", "destroy"),
+                  int(s["ttl_minutes"]) if s.get("ttl_minutes") else None,
+                  s.get("at_time", "03:00"),
+                  json.dumps([int(d) for d in s.get("weekdays", [0, 1, 2, 3, 4, 5, 6])]),
+                  int(s["ip_pool_id"]) if s.get("ip_pool_id") else None)
+        with self._lock, self._conn() as c:
+            if s.get("id"):
+                c.execute("UPDATE schedules SET name=?,enabled=?,vmids=?,mode=?,ip=?,gateway=?,"
+                          "checks=?,keep=?,ttl_minutes=?,at_time=?,weekdays=?,ip_pool_id=? "
+                          "WHERE id=?", (*fields, int(s["id"])))
+                sid = int(s["id"])
+            else:
+                cur = c.execute("INSERT INTO schedules (name,enabled,vmids,mode,ip,gateway,checks,"
+                                "keep,ttl_minutes,at_time,weekdays,ip_pool_id,created) "
+                                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (*fields, _iso(_now())))
+                sid = int(cur.lastrowid)
+            row = c.execute("SELECT * FROM schedules WHERE id=?", (sid,)).fetchone()
+        if row is None:
+            raise ValueError(f"Zeitplan {sid} besteht nicht (mehr).")
+        return self._sched_row(row)
+
+    def delete_schedule(self, sid: int) -> None:
+        with self._lock, self._conn() as c:
+            c.execute("DELETE FROM schedules WHERE id=?", (int(sid),))
+
+    def mark_schedule_run(self, sid: int, when: dt.datetime) -> None:
+        with self._lock, self._conn() as c:
+            c.execute("UPDATE schedules SET last_run=? WHERE id=?", (_iso(when), int(sid)))

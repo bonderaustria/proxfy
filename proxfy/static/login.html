@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anmeldung &ndash; Proxfy</title>
+<style>
+:root{
+  --bg:#11151c; --panel:#181e27; --panel2:#1f2731; --line:#2b3440;
+  --fg:#e6edf3; --muted:#8b98a8; --accent:#4a9eff;
+  --ok:#3fb950; --fail:#f85149; --warn:#d29922;
+  --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--fg);
+     font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+     display:flex;align-items:center;justify-content:center;padding:24px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+      width:min(400px,100%);padding:26px 26px 22px;
+      box-shadow:0 18px 50px rgba(0,0,0,.45)}
+h1{font-size:17px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:12.5px;margin-bottom:20px}
+label{display:block;font-size:12px;color:var(--muted);margin:12px 0 4px}
+input{width:100%;padding:9px 11px;border-radius:6px;background:var(--bg);color:var(--fg);
+      border:1px solid var(--line);font:inherit}
+input:focus{outline:none;border-color:var(--accent)}
+input.code{font-family:var(--mono);font-size:20px;letter-spacing:.32em;text-align:center}
+button{width:100%;margin-top:18px;padding:10px;border-radius:6px;cursor:pointer;
+       background:var(--accent);border:1px solid var(--accent);color:#06121f;
+       font:inherit;font-weight:600}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.ghost{background:none;border-color:var(--line);color:var(--muted);
+             font-weight:400;margin-top:9px}
+.msg{margin-top:14px;padding:9px 11px;border-radius:6px;font-size:12.5px;line-height:1.5}
+.msg.fail{background:#3a1d1c;border:1px solid #5c2120;color:#ffa198}
+.msg.warn{background:#3a2a12;border:1px solid #5c4519;color:#f0c674}
+.msg.ok{background:#12301a;border:1px solid #1e4a26;color:#7ee787}
+.msg.info{background:#16222e;border:1px solid #24405c;color:#a6c8e8}
+.step{display:none} .step.on{display:block}
+.foot{margin-top:18px;color:var(--muted);font-size:11.5px;text-align:center;
+      border-top:1px solid var(--line);padding-top:12px}
+</style>
+</head>
+<body>
+<div class="card">
+
+  <!-- Ersteinrichtung: solange kein Konto besteht -->
+  <div class="step" id="s-setup">
+    <h1>Ersteinrichtung</h1>
+    <div class="sub">Es besteht noch kein Konto. Lege das erste an &mdash; danach
+      ist dieser Weg dauerhaft geschlossen.</div>
+    <label>Name</label>
+    <input id="su-name" autocomplete="name" placeholder="Vorname Nachname">
+    <label>E-Mail</label>
+    <input id="su-mail" type="email" autocomplete="username" placeholder="du@example.org">
+    <label>Passwort (mindestens 10 Zeichen)</label>
+    <input id="su-pass" type="password" autocomplete="new-password">
+    <label>Passwort wiederholen</label>
+    <input id="su-pass2" type="password" autocomplete="new-password">
+    <button id="btn-setup">Konto anlegen</button>
+  </div>
+
+  <!-- Anmeldung -->
+  <div class="step" id="s-login">
+    <h1>Proxfy</h1>
+    <div class="sub">Restore-Verifikation f&uuml;r Proxmox Backup Server.</div>
+    <label>E-Mail</label>
+    <input id="li-mail" type="email" autocomplete="username">
+    <label>Passwort</label>
+    <input id="li-pass" type="password" autocomplete="current-password">
+    <button id="btn-login">Anmelden</button>
+  </div>
+
+  <!-- Zweiter Faktor -->
+  <div class="step" id="s-2fa">
+    <h1>Zweiter Faktor</h1>
+    <div class="sub">Sechsstelliger Code aus deiner Authenticator-App.</div>
+    <input id="li-code" class="code" inputmode="numeric" autocomplete="one-time-code"
+           maxlength="6" placeholder="000000">
+    <button id="btn-2fa">Best&auml;tigen</button>
+    <button class="ghost" id="btn-backup">Stattdessen Wiederherstellungscode</button>
+  </div>
+
+  <!-- Wiederherstellungscode -->
+  <div class="step" id="s-backup">
+    <h1>Wiederherstellungscode</h1>
+    <div class="sub">Einer der Codes, die bei der Einrichtung angezeigt wurden.
+      Jeder Code gilt nur einmal.</div>
+    <input id="li-backup" class="code" style="letter-spacing:.1em;font-size:15px">
+    <button id="btn-backupgo">Best&auml;tigen</button>
+    <button class="ghost" id="btn-back2fa">Zur&uuml;ck zum Code</button>
+  </div>
+
+  <div id="out"></div>
+  <div class="foot">Sitzungen liegen serverseitig. Es wird nichts im Browser gespeichert.</div>
+</div>
+<script src="/login.js"></script>
+</body>
+</html>
