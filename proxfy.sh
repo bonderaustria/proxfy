@@ -172,9 +172,9 @@ fi
 ARBEIT=$(mktemp -d /tmp/proxfy-download-XXXXXX)
 trap 'rm -rf "$ARBEIT"' EXIT
 
-if [ -f "$(dirname "${BASH_SOURCE[0]}")/create-lxc.sh" ]; then
+if [ -f "$(dirname "${BASH_SOURCE[0]:-}")/create-lxc.sh" ]; then
     schritt "Quelle aus dem lokalen Verzeichnis"
-    QUELLE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    QUELLE="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" && pwd)"
 else
     schritt "Quelle von GitHub laden ($REPO, Zweig $ZWEIG)"
     if ! curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/heads/$ZWEIG" \
