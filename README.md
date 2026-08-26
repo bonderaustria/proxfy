@@ -40,7 +40,7 @@ PROXFY_IP=192.168.1.50/24 PROXFY_GW=192.168.1.1 PROXFY_UNATTENDED=1 \
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/bonderaustria/proxfy/main/proxfy.sh)"
 ```
 
-Vorher prfen, ohne etwas anzulegen:
+Vorher prüfen, ohne etwas anzulegen:
 
 ```bash
 PROXFY_DRY_RUN=1 PROXFY_UNATTENDED=1 PROXFY_IP=192.168.1.50/24 PROXFY_GW=192.168.1.1 \
@@ -48,11 +48,12 @@ PROXFY_DRY_RUN=1 PROXFY_UNATTENDED=1 PROXFY_IP=192.168.1.50/24 PROXFY_GW=192.168
 ```
 
 Das zeigt die erkannten Vorgaben, ob die Container-ID frei ist und ob die
-Adresse antwortet  und legt nichts an.
+Adresse antwortet — und legt nichts an.
 
 **Voraussetzungen:** Proxmox VE 8 oder 9, ein Storage mit Backup-Inhalt (PBS oder
 ein Verzeichnis mit vzdump-Dateien), und im Container Internetzugang für die
 Installation von Node.
+
 
 ### Aus dem geklonten Verzeichnis
 
@@ -73,6 +74,45 @@ werden nie angefasst.
 
 ---
 
+## Aktualisieren
+
+Denselben Befehl noch einmal ausführen:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/bonderaustria/proxfy/main/proxfy.sh)"
+```
+
+Das Skript erkennt die vorhandene Installation — es sucht den Container, in dem
+`/opt/proxfy/config.yaml` liegt — und aktualisiert nur diese. Es fragt weder
+nach Adresse noch nach Ressourcen und legt keinen zweiten Container an.
+
+Erneuert wird ausschließlich der Programmcode samt Oberfläche. Unangetastet
+bleiben:
+
+| Datei | Inhalt |
+|---|---|
+| `config.yaml` | Hypervisor, Storages, Bridges, Zeitschranken |
+| `auth.env` | Geheimnisse des Anmeldedienstes |
+| `auth.db` | Konten, Passwörter, zweiter Faktor, Sitzungen |
+| `proxfy.db` | Zeitpläne, Verlauf, Testgäste, IP-Vorrat, Einstellungen |
+
+Vor jeder Aktualisierung werden diese vier nach
+`/opt/proxfy-sicherung/<zeitstempel>/` im Container kopiert; die letzten fünf
+Stände bleiben liegen. Zurück geht es damit durch schlichtes Zurückkopieren und
+`systemctl restart proxfy proxfy-auth`.
+
+Vorher ansehen, was geschehen würde:
+
+```bash
+PROXFY_DRY_RUN=1 PROXFY_UNATTENDED=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/bonderaustria/proxfy/main/proxfy.sh)"
+```
+
+Soll trotz vorhandener Installation eine zweite, unabhängige entstehen:
+
+```bash
+PROXFY_NEU=1 PROXFY_IP=192.168.1.51/24 PROXFY_GW=192.168.1.1 \
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/bonderaustria/proxfy/main/proxfy.sh)"
+```
 ## Aufbau
 
 Proxfy läuft in einem eigenen LXC, nicht auf dem Hypervisor — dort ist Python
