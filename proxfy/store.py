@@ -239,10 +239,17 @@ class Store:
                        json.dumps(report, ensure_ascii=False), log, source, schedule_id))
 
     def list_jobs(self, limit: int = 100, vmid: int | None = None,
-                  schedule_id: int | None = None) -> list[dict]:
-        """Laufhistorie, wahlweise auf einen Gast oder einen Zeitplan eingegrenzt."""
-        sql = ("SELECT job_id,vmid,kind,mode,snapshot,verdict,duration,started,source,"
-               "schedule_id FROM jobs")
+                  schedule_id: int | None = None,
+                  mit_bericht: bool = False) -> list[dict]:
+        """Laufhistorie, wahlweise auf einen Gast oder einen Zeitplan eingegrenzt.
+
+        'mit_bericht' holt zusaetzlich die Einzelheiten jedes Laufs. Fuer eine
+        Uebersicht waere das Ballast - dort steht je Lauf eine Zeile, hier
+        haengt an jeder ein vollstaendiger Bericht samt Protokoll.
+        """
+        felder = ("job_id,vmid,kind,mode,snapshot,verdict,duration,started,source,"
+                  "schedule_id" + (",report" if mit_bericht else ""))
+        sql = f"SELECT {felder} FROM jobs"
         args: list = []
         if vmid is not None:
             sql += " WHERE vmid=?"

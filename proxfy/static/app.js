@@ -419,26 +419,81 @@ async function zeitplanOeffnen(id) {
   ["btn-runsched", "btn-togglesched", "btn-delsched"].forEach((x) => {
     $(x).style.display = "";
   });
-  $("btn-togglesched").textContent = s.enabled ? "Deaktivieren" : "Aktivieren";
+  $("btn-togglesched").textContent = s.enabled ? t("Deaktivieren") : t("Aktivieren");
+  $("btn-schedpdf").style.display = "";
   $("btn-savesched").textContent = "Änderungen speichern";
   $("sched-out").innerHTML = "";
   renderSchedules(schedules);
   await zeitplanVerlauf(id);
 }
 
+async function laufAufklappen(jobId) {
+  const zeile = document.getElementById("jd-" + jobId);
+  if (!zeile) return;
+  const zelle = zeile.firstElementChild;
+  if (zeile.style.display !== "none") { zeile.style.display = "none"; return; }
+  zeile.style.display = "";
+  if (zelle.dataset.geladen) return;
+  zelle.innerHTML = `<div class="hint">${t("lade …")}</div>`;
+  try {
+    const j = await api(`/api/jobs/${encodeURIComponent(jobId)}`);
+    const rep = typeof j.report === "string" ? JSON.parse(j.report) : (j.report || {});
+    const pruef = rep.checks || [];
+    const kopf = [
+      ["Backup-Stand", rep.snapshot || j.snapshot],
+      ["Modus", rep.mode], ["Knoten", rep.node],
+      ["Scratch-VMID", rep.scratch_vmid], ["Adresse", rep.ip],
+    ].filter(([, v]) => v !== undefined && v !== null && v !== "");
+    zelle.innerHTML = `
+      <div class="laufdetail">
+        <div class="kopf">${kopf.map(([k, v]) =>
+          `<span><b>${t(k)}</b> <span class="mono">${esc(String(v))}</span></span>`).join("")}</div>
+        ${rep.error ? `<div class="failbox">${esc(rep.error)}</div>` : ""}
+        ${pruef.length === 0
+          ? `<div class="hint">${t("Keine Prüfungen aufgezeichnet.")}</div>`
+          : `<table class="pruef"><tbody>${pruef.map((p) => `
+              <tr>
+                <td>${p.skipped ? "○" : p.passed ? "●" : "✕"}</td>
+                <td class="nm">${esc(p.name || p.kind || "")}${
+                  p.required === false ? ` <span class="hintline">${t("keine Pflicht")}</span>` : ""}</td>
+                <td class="rs">${p.skipped ? t("übersprungen")
+                  : p.passed ? t("bestanden") : t("gescheitert")}</td>
+              </tr>
+              ${p.detail ? `<tr><td></td><td colspan="2" class="dt">${esc(String(p.detail))}</td></tr>` : ""}
+            `).join("")}</tbody></table>`}
+      </div>`;
+    zelle.dataset.geladen = "1";
+  } catch (e) {
+    zelle.innerHTML = `<div class="failbox">${esc(e.message)}</div>`;
+  }
+}
+
 async function zeitplanVerlauf(id) {
   try {
-    const jobs = await api(`/api/jobs?schedule_id=${id}&limit=25`);
+    // Alle Laeufe, nicht nur die letzten fuenfundzwanzig - die Frage lautet ja
+    // gerade, ob der Plan ueber die Zeit getan hat, was er sollte.
+    const jobs = await api(`/api/jobs?schedule_id=${id}&limit=500`);
     $("s-verlauf-karte").style.display = "";
+    $("s-verlauf-zahl").textContent = jobs.length
+      ? `${jobs.length} ${t(jobs.length === 1 ? "Lauf" : "Läufe")}` : "";
     $("s-verlauf").innerHTML = jobs.length === 0
-      ? '<tr><td colspan="5" class="muted">dieser Zeitplan lief noch nie</td></tr>'
-      : jobs.map((j) => `<tr>
+      ? `<tr><td colspan="5" class="muted">${t("dieser Zeitplan lief noch nie")}</td></tr>`
+      : jobs.map((j) => `<tr class="klick" data-job="${esc(j.job_id)}">
           <td class="mono muted small">${esc((j.started || "").replace("T", " ").slice(0, 19))}</td>
           <td class="mono">${esc(j.kind || "")}/${j.vmid}</td>
           <td>${verdictPill(j.verdict)}</td>
           <td class="mono muted small">${j.duration ? Math.round(j.duration) + " s" : ""}</td>
           <td class="small muted">${esc((j.snapshot || "").split("/").pop())}</td>
-        </tr>`).join("");
+        </tr>
+        <tr class="details" id="jd-${esc(j.job_id)}" style="display:none">
+          <td colspan="5" data-dynamisch></td></tr>`).join("");
+
+    // Ein Klick auf eine Zeile zeigt, was in diesem Lauf gepruft wurde und was
+    // dabei herauskam. Nachgeladen wird erst beim Aufklappen - die
+    // Einzelheiten samt Protokoll sind je Lauf ein Vielfaches der Zeile.
+    $("s-verlauf").querySelectorAll("[data-job]").forEach((tr) => {
+      tr.onclick = () => laufAufklappen(tr.dataset.job);
+    });
     const letzter = jobs[0];
     $("s-zuletzt").textContent = letzter
       ? `zuletzt ${String(letzter.started).replace("T", " ").slice(0, 16)}`
@@ -530,6 +585,13 @@ $("btn-runsched").onclick = async () => {
   } catch (e) {
     $("sched-out").innerHTML = `<div class="failbox">${esc(e.message)}</div>`;
   }
+};
+
+$("btn-schedpdf").onclick = () => {
+  if (!sGewaehlt) return;
+  // Ein schlichter Verweis: der Browser laedt die Datei selbst herunter, ohne
+  // sie vorher im Speicher zusammenzusetzen.
+  window.location.href = `/api/schedules/${sGewaehlt}/report.pdf`;
 };
 
 $("btn-delsched").onclick = async () => {

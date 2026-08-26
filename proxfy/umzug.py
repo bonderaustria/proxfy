@@ -117,6 +117,16 @@ def _belegt(ziel, tabelle: str) -> bool:
     return bool(r and int(r["n"]) > 0)
 
 
+# Verweise aus anderen Tabellen auf eine Nummer, die es dort laengst nicht mehr
+# gibt. Der Verlauf haelt die Zeitplan-Nummer eines Laufs fest, auch wenn der
+# Zeitplan danach geloescht wurde. Wer den Zaehler nur an den vorhandenen
+# Zeilen ausrichtet, vergibt eine solche Nummer erneut - und der neue Zeitplan
+# erbt die Laeufe des geloeschten.
+_VERWEISE = {
+    "schedules": [("jobs", "schedule_id")],
+}
+
+
 def _folgenummern(ziel, tabelle: str, typen: dict[str, str]) -> None:
     """Setzt den Zaehler hinter die uebernommenen Schluessel.
 
@@ -127,9 +137,15 @@ def _folgenummern(ziel, tabelle: str, typen: dict[str, str]) -> None:
     # seine Kennungen als Text - dort gibt es nichts weiterzustellen.
     if not typen.get("id", "").startswith(("integer", "bigint", "smallint")):
         return
+
+    teile = [f'COALESCE((SELECT MAX(id) FROM "{tabelle}"), 0)']
+    for fremd, spalte in _VERWEISE.get(tabelle, []):
+        teile.append(f'COALESCE((SELECT MAX("{spalte}") FROM "{fremd}"), 0)')
+    hoechste = teile[0] if len(teile) == 1 else "GREATEST(" + ", ".join(teile) + ")"
+
     ziel.execute(
         "SELECT setval(pg_get_serial_sequence(?, 'id'), "
-        f'COALESCE((SELECT MAX(id) FROM "{tabelle}"), 0) + 1, false)', (tabelle,))
+        f"{hoechste} + 1, false)", (tabelle,))
 
 
 def _uebernehmen(ziel, tabelle: str, spalten: list[str], reihen: list[tuple]) -> int:

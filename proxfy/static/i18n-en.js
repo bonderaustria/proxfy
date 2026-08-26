@@ -466,3 +466,21 @@ Object.assign(EN, {
   "Mo": "Mon", "Di": "Tue", "Mi": "Wed", "Do": "Thu",
   "Fr": "Fri", "Sa": "Sat", "So": "Sun",
 });
+
+// --- Zeitplan-Ansicht und Bericht --------------------------------------------
+Object.assign(EN, {
+  "Alle Ausführungen dieses Zeitplans": "Every run of this schedule",
+  "Eine Zeile anklicken zeigt, was geprüft wurde und was dabei herauskam.":
+    "Clicking a row shows what was checked and what came of it.",
+  "Bericht als PDF": "Report as PDF",
+  "dieser Zeitplan lief noch nie": "this schedule has never run",
+  "Lauf": "run",
+  "Läufe": "runs",
+  "Keine Prüfungen aufgezeichnet.": "No checks recorded.",
+  "keine Pflicht": "not required",
+  "bestanden": "passed",
+  "gescheitert": "failed",
+  "Scratch-VMID": "Scratch VMID",
+  "Knoten": "Node",
+  "Aktivieren": "Enable",
+});

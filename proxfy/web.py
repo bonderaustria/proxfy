@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from . import auth as authmod
 from . import aussenadresse
 from . import dateien
+from . import zeitplanbericht
 from . import checks as checkmod
 from . import discover as discovery
 from . import netguard, pve
@@ -339,6 +340,35 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 proc.kill()
 
+    # --- Bericht ueber einen Zeitplan ---------------------------------------
+
+    def _zeitplan_laeufe(self, sid: int, limit: int = 500,
+                        mit_bericht: bool = False) -> list[dict]:
+        return self.store.list_jobs(limit=limit, schedule_id=int(sid),
+                                    mit_bericht=mit_bericht)
+
+    def _zeitplan_bericht(self, sid: int) -> None:
+        ident = self.identity()
+        plaene = {int(p["id"]): p for p in self.store.list_schedules()}
+        plan = plaene.get(int(sid))
+        if plan is None:
+            return self._json({"error": f"Zeitplan {sid} besteht nicht."}, 404)
+
+        jobs = self._zeitplan_laeufe(sid, mit_bericht=True)
+        daten = zeitplanbericht.erzeugen(plan, jobs, ident.name or ident.email)
+        name = f"proxfy-{plan.get('name', 'zeitplan')}.pdf".replace(" ", "-")
+
+        self.log_error_line(
+            f"[Bericht] {ident.email} laedt den Bericht zu Zeitplan {sid} "
+            f"({len(jobs)} Laeufe)")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Length", str(len(daten)))
+        self.send_header("Content-Disposition",
+                         "attachment; filename*=UTF-8''" + urllib.parse.quote(name))
+        self.end_headers()
+        self.wfile.write(daten)
+
     def _proxy_pruefen(self, body: dict) -> dict:
         """Ruft die Aussenadresse auf und sagt, was zurueckkam.
 
@@ -595,6 +625,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json([dataclasses.asdict(s)
                                    for s in pve.list_snapshots(host, store_name)
                                    if s.vmid == vmid])
+            if u.path.startswith("/api/schedules/") and u.path.endswith("/report.pdf"):
+                return self._zeitplan_bericht(u.path.split("/")[3])
+            if u.path.startswith("/api/schedules/") and u.path.endswith("/jobs"):
+                return self._json(self._zeitplan_laeufe(u.path.split("/")[3]))
+
             if u.path == "/api/targets":
                 return self._json(self.store.list_targets())
             if u.path == "/api/leases":
