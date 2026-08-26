@@ -2,157 +2,156 @@
 
 # Proxfy
 
-**Prüft, ob sich eure Proxmox-Backups wirklich wiederherstellen lassen — und ob
-danach die Anwendung läuft.**
+*[Deutsche Fassung](README.de.md)*
 
-Proxmox Backup Server prüft Chunk-Prüfsummen. Das belegt, dass die Bytes
-unversehrt sind. Es belegt nicht, dass daraus eine funktionierende Maschine
-wird. Proxfy stellt ein Backup unter einer Wegwerf-VMID wieder her, startet es
-abgeschottet, führt echte Funktionsprüfungen aus — Dienst aktiv, Port lauscht,
-Weboberfläche antwortet, Datenbank liefert einen aktuellen Datensatz — und räumt
-danach auf.
+**Checks whether your Proxmox backups actually restore — and whether the
+application still runs afterwards.**
 
-Funktioniert für **VMs und LXC-Container** gleichermaßen.
+Proxmox Backup Server verifies chunk checksums. That proves the bytes are
+intact. It does not prove a working machine comes out of them. Proxfy restores a
+backup under a throwaway VMID, boots it in isolation, runs real functional
+checks — service active, port listening, web interface responding, database
+returning a fresh record — and cleans up afterwards.
 
-> **Es läuft nichts von selbst.** Kein eingebauter Zeitplan, kein Cron-Eintrag.
-> Ein Lauf entsteht nur durch einen Klick oder durch einen Zeitplan, den ihr
-> selbst anlegt.
+Works the same for **VMs and LXC containers**.
+
+> **Nothing runs by itself.** No built-in schedule, no cron entry. A run only
+> happens through a click or through a schedule you created yourself.
 
 ---
 
 ## Installation
 
-Auf dem Proxmox-Host:
+On the Proxmox host:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/bonderaustria/proxfy/main/proxfy.sh)"
 ```
 
-Das Skript fragt Container-ID, Adresse, Gateway und Ressourcen ab, legt einen
-unprivilegierten Container an, richtet den SSH-Zugang zum Hypervisor ein und
-installiert alles hinein. Danach ist die Oberfläche unter `http://<adresse>:8099/`
-erreichbar und wartet auf das erste Konto.
+The script asks for container ID, address, gateway and resources, creates an
+unprivileged container, sets up SSH access to the hypervisor and installs
+everything into it. Afterwards the interface waits for its first account at
+`http://<address>:8099/`.
 
-Ohne Rückfragen:
+Without questions:
 
 ```bash
 PROXFY_IP=192.168.1.50/24 PROXFY_GW=192.168.1.1 PROXFY_UNATTENDED=1 \
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/bonderaustria/proxfy/main/proxfy.sh)"
 ```
 
-Vorher prüfen, ohne etwas anzulegen:
+Check first, without creating anything:
 
 ```bash
 PROXFY_DRY_RUN=1 PROXFY_UNATTENDED=1 PROXFY_IP=192.168.1.50/24 PROXFY_GW=192.168.1.1 \
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/bonderaustria/proxfy/main/proxfy.sh)"
 ```
 
-Das zeigt die erkannten Vorgaben, ob die Container-ID frei ist und ob die
-Adresse antwortet — und legt nichts an.
+That shows the detected defaults, whether the container ID is free and whether
+the address answers — and creates nothing.
 
-**Voraussetzungen:** Proxmox VE 8 oder 9, ein Storage mit Backup-Inhalt (PBS oder
-ein Verzeichnis mit vzdump-Dateien), und im Container Internetzugang für die
-Installation von Node.
+**Requirements:** Proxmox VE 8 or 9, a storage holding backups (PBS or a
+directory with vzdump files), and internet access inside the container to
+install Node.
 
-
-### Aus dem geklonten Verzeichnis
+### From a cloned directory
 
 ```bash
 git clone https://github.com/bonderaustria/proxfy.git
 cd proxfy && bash proxfy.sh
 ```
 
-### Deinstallation
+### Uninstalling
 
 ```bash
 bash /opt/proxfy/uninstall.sh
 ```
 
-`--yes` überspringt die Rückfragen, `--keep-data` behält Konfiguration sowie
-Verlaufs- und Benutzerdatenbank. Backups, Backup-Storage und produktive Gäste
-werden nie angefasst.
+`--yes` skips the questions, `--keep-data` keeps the configuration along with
+the history and user databases. Backups, backup storage and production guests
+are never touched.
 
 ---
 
-## Aktualisieren
+## Updating
 
-Denselben Befehl noch einmal ausführen:
+Run the same command again:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/bonderaustria/proxfy/main/proxfy.sh)"
 ```
 
-Das Skript erkennt die vorhandene Installation — es sucht den Container, in dem
-`/opt/proxfy/config.yaml` liegt — und aktualisiert nur diese. Es fragt weder
-nach Adresse noch nach Ressourcen und legt keinen zweiten Container an.
+The script recognises the existing installation — it looks for the container
+holding `/opt/proxfy/config.yaml` — and updates only that one. It asks for
+neither address nor resources and creates no second container.
 
-Erneuert wird ausschließlich der Programmcode samt Oberfläche. Unangetastet
-bleiben:
+Only the program code and interface are renewed. Untouched:
 
-| Datei | Inhalt |
+| File | Contents |
 |---|---|
-| `config.yaml` | Hypervisor, Storages, Bridges, Zeitschranken |
-| `auth.env` | Geheimnisse des Anmeldedienstes |
-| `auth.db` | Konten, Passwörter, zweiter Faktor, Sitzungen |
-| `proxfy.db` | Zeitpläne, Verlauf, Testgäste, IP-Vorrat, Einstellungen |
+| `config.yaml` | hypervisor, storages, bridges, timeouts |
+| `auth.env` | secrets of the login service |
+| `auth.db` | accounts, passwords, second factor, sessions |
+| `proxfy.db` | schedules, history, test guests, IP pool, settings |
 
-Vor jeder Aktualisierung werden diese vier nach
-`/opt/proxfy-sicherung/<zeitstempel>/` im Container kopiert; die letzten fünf
-Stände bleiben liegen. Zurück geht es damit durch schlichtes Zurückkopieren und
+Before every update those four are copied to
+`/opt/proxfy-sicherung/<timestamp>/` inside the container; the last five states
+are kept. Going back is a matter of copying them into place and running
 `systemctl restart proxfy proxfy-auth`.
 
-Vorher ansehen, was geschehen würde:
+See what would happen first:
 
 ```bash
 PROXFY_DRY_RUN=1 PROXFY_UNATTENDED=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/bonderaustria/proxfy/main/proxfy.sh)"
 ```
 
-Soll trotz vorhandener Installation eine zweite, unabhängige entstehen:
+To create a second, independent installation despite an existing one:
 
 ```bash
 PROXFY_NEU=1 PROXFY_IP=192.168.1.51/24 PROXFY_GW=192.168.1.1 \
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/bonderaustria/proxfy/main/proxfy.sh)"
 ```
 
+---
 
-## Hinter einem Reverse Proxy
+## Behind a reverse proxy
 
-Proxfy im Internet erreichbar zu machen heißt: der Proxy nimmt die Verbindung
-entgegen, beendet TLS und reicht sie an Port 8099 weiter. Damit das trägt, sind
-zwei Seiten einzustellen — der Proxy und Proxfy selbst.
+Making Proxfy reachable from the internet means: the proxy takes the
+connection, terminates TLS and passes it on to port 8099. Two sides need
+configuring for that to hold — the proxy and Proxfy itself.
 
-### Warum es ohne Einstellung nicht geht
+### Why it does not work without configuration
 
-Der Anmeldedienst prüft, woher eine Anfrage kommt. Steht ein Proxy davor,
-kommt sie mit dessen Adresse an — `https://verify.example.org` statt
-`http://192.168.1.35:8099`. Diese Adresse kennt Proxfy zunächst nicht und weist
-sie ab:
+The login service checks where a request comes from. With a proxy in front it
+arrives carrying the proxy's address — `https://verify.example.org` instead of
+`http://192.168.1.35:8099`. Proxfy does not know that address at first and turns
+it away:
 
 ```
 {"message":"Invalid origin","code":"INVALID_ORIGIN"}
 ```
 
-Das ist kein Fehler, sondern der Schutz, der verhindert, dass eine fremde Seite
-im Namen einer angemeldeten Person Anfragen stellt. Er braucht nur die
-Information, welche Adresse legitim ist.
+This is not a bug but the protection that keeps a foreign site from making
+requests in the name of a signed-in person. It only needs to be told which
+address is legitimate.
 
-### 1. Im Nginx Proxy Manager
+### 1. In Nginx Proxy Manager
 
-**Hosts → Proxy Hosts → Add Proxy Host**, Reiter *Details*:
+**Hosts → Proxy Hosts → Add Proxy Host**, tab *Details*:
 
-| Feld | Wert |
+| Field | Value |
 |---|---|
 | Domain Names | `verify.example.org` |
 | Scheme | `http` |
-| Forward Hostname / IP | Adresse des Proxfy-Containers |
+| Forward Hostname / IP | address of the Proxfy container |
 | Forward Port | `8099` |
-| Cache Assets | aus |
-| Block Common Exploits | an |
-| Websockets Support | an |
+| Cache Assets | off |
+| Block Common Exploits | on |
+| Websockets Support | on |
 
-Reiter *SSL*: ein Zertifikat wählen, **Force SSL** und **HTTP/2 Support** an.
+Tab *SSL*: pick a certificate, switch on **Force SSL** and **HTTP/2 Support**.
 
-Reiter *Advanced* — dieser Block ist der entscheidende Teil:
+Tab *Advanced* — this block is the decisive part:
 
 ```nginx
 proxy_buffering off;
@@ -162,313 +161,329 @@ proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 proxy_set_header X-Forwarded-Proto $scheme;
 ```
 
-`proxy_buffering off` ist nicht optional. Proxfy schickt das Protokoll eines
-laufenden Tests als fortlaufenden Datenstrom (Server-Sent Events). Mit
-Pufferung sammelt Nginx diesen Strom und gibt ihn erst am Ende heraus — die
-Oberfläche wirkt dann eingefroren, obwohl der Lauf normal weiterläuft.
-`proxy_read_timeout` muss länger sein als der längste Lauf, sonst bricht die
-Verbindung mitten in einer Wiederherstellung ab.
+`proxy_buffering off` is not optional. Proxfy sends the log of a running test as
+a continuous stream (server-sent events). With buffering, Nginx collects that
+stream and hands it over only at the end — the interface then looks frozen even
+though the run continues normally. `proxy_read_timeout` has to outlast the
+longest run, otherwise the connection breaks in the middle of a restore.
 
 ### 2. In Proxfy
 
-**Einstellungen → Zugriff und Netzwerk**:
+**Settings → Access and network**:
 
-- **Adresse von außen** — genau die Adresse, unter der der Browser Proxfy
-  sieht, mit Schema und ohne Pfad: `https://verify.example.org`. Proxfy trägt
-  sie in `auth.env` ein und startet den Anmeldedienst neu; die eigene Adresse im
-  Netz bleibt daneben erlaubt.
-- **Hinter einem Reverse Proxy betreiben** — Proxfy liest dann die echte
-  Herkunftsadresse aus `X-Forwarded-For`. Ohne das sähe die Anmeldesperre nur
-  die Adresse des Proxys und würde bei einem Fehlversuch alle aussperren.
-- **Sitzungscookie nur über HTTPS** — richtig, sobald Proxfy aus dem Internet
-  erreichbar ist. Danach kommst du **nur noch über den Proxy** hinein: der
-  Browser gibt das Cookie über `http://` dann nicht mehr heraus. Erst
-  einschalten, wenn der Weg über den Proxy nachweislich steht.
+- **Address from outside** — exactly the address the browser sees Proxfy under,
+  with scheme and without a path: `https://verify.example.org`. Proxfy writes it
+  into `auth.env` and restarts the login service; the address on your own
+  network stays allowed alongside it.
+- **Running behind a reverse proxy** — Proxfy then reads the real origin address
+  from `X-Forwarded-For`. Without it the login lockout would only ever see the
+  proxy's address and would lock out everyone on a single failed attempt.
+- **Session cookie over HTTPS only** — right as soon as Proxfy is reachable from
+  the internet. After that you get in **only through the proxy**: the browser no
+  longer hands out the cookie over `http://`. Switch it on once the path through
+  the proxy demonstrably works.
 
-Die Schaltfläche **Weg über den Proxy prüfen** ruft die eingetragene Adresse auf
-und sagt, was zurückkam. Antwortet etwas anderes als Proxfy, zeigt der Proxy auf
-den falschen Rechner.
+The **Test the path through the proxy** button calls the configured address and
+reports what came back. If something other than Proxfy answers, the proxy points
+at the wrong machine.
 
-### Wenn es nicht geht
+### When it does not work
 
-| Bild | Ursache |
+| Symptom | Cause |
 |---|---|
-| `Invalid origin` bei der Anmeldung | Adresse von außen fehlt oder weicht ab — Schema, Name und Port müssen exakt dem entsprechen, was in der Adresszeile steht |
-| Anmeldung scheitert wortlos, Cookie fehlt | „Sitzungscookie nur über HTTPS" ist an, der Aufruf lief aber über `http://` |
-| Protokoll eines Laufs bleibt stehen | `proxy_buffering off` fehlt |
-| Verbindung bricht nach einigen Minuten ab | `proxy_read_timeout` zu kurz |
-| Sperre nach einem Fehlversuch trifft alle | „Hinter einem Reverse Proxy betreiben" ist aus |
-| Prüfung meldet „nicht erreichbar", von außen geht es | Der Container kommt nicht an die öffentliche Adresse (kein NAT-Loopback). Kein Fehler von Proxfy |
-| 502 vom Proxy | Falsche Ziel-Adresse oder falscher Port, oder der Dienst läuft nicht: `systemctl status proxfy` |
+| `Invalid origin` on sign-in | address from outside missing or different — scheme, name and port must match the address bar exactly |
+| Sign-in fails silently, cookie missing | “Session cookie over HTTPS only” is on but the call went over `http://` |
+| Live log of a run stands still | `proxy_buffering off` is missing |
+| Connection drops after a few minutes | `proxy_read_timeout` too short |
+| A lockout after one failed attempt hits everyone | “Running behind a reverse proxy” is off |
+| The test reports “not reachable” although it works from outside | the container cannot reach the public address (no NAT loopback). Not a fault of Proxfy |
+| 502 from the proxy | wrong target address or port, or the service is down: `systemctl status proxfy` |
 
-Aussperren kann man sich damit nicht dauerhaft: die Gruppe merkt sich den
-vorherigen Stand und stellt ihn wieder her, wenn die Änderung nicht binnen zehn
-Minuten bestätigt wird. Und `proxfy config reset` auf der Kommandozeile des
-Containers räumt jede in der Oberfläche gemachte Einstellung weg.
+You cannot lock yourself out permanently: this group remembers the previous
+state and restores it unless the change is confirmed within ten minutes. And
+`proxfy config reset` on the container's command line clears every setting made
+through the interface.
 
-## Aufbau
+---
 
-Proxfy läuft in einem eigenen LXC, nicht auf dem Hypervisor — dort ist Python
-„externally managed", und Fremdsoftware gehört nicht auf den Hypervisor selbst.
+## Languages
+
+The interface speaks **German and English**, switchable in the header. The
+language belongs to the account, so a German and an English account can work
+side by side. Until someone signs in, the sign-in page follows the browser.
+
+German is the source: it stands in the markup and in the code as it is
+displayed, English lives beside it in
+[`proxfy/static/i18n-en.js`](proxfy/static/i18n-en.js) and, for server messages,
+in [`proxfy/texte.py`](proxfy/texte.py) — keyed by the German text itself.
+Adding a feature therefore means writing the German text and adding one English
+line. If it is missing, German appears: visible and fixable in one line, rather
+than an empty spot or a raw key.
+
+---
+
+## Architecture
+
+Proxfy runs in its own LXC, not on the hypervisor — Python there is “externally
+managed”, and third-party software does not belong on the hypervisor itself.
 
 ```
    Browser
-      │  Port 8099  (einzige Tür nach außen)
+      │  port 8099  (the only door to the outside)
       ▼
  ┌─────────────────────────────────────────┐
  │  LXC "proxfy"                           │
  │                                         │
- │   Python  ──── prüft jede Anfrage ────► │
+ │   Python  ──── checks every request ──► │
  │   :8099          Node + Better Auth     │
  │                  127.0.0.1:8100         │
- │                  (nur Loopback)         │
+ │                  (loopback only)        │
  └──────────────┬──────────────────────────┘
-                │ SSH mit Schlüssel
+                │ SSH with a key
                 ▼
         Proxmox VE (pct, qm, pvesm)
 ```
 
 ---
 
-## Ablauf eines Laufs
+## What a run does
 
 ```
-Backup wählen  →  Netzwerk planen (Preflight)  →  Wiederherstellen
-      →  Netzwerk vereinzeln  →  ISOLIERT starten  →  Prüfungen innen
-      →  [nur geroutet] IP vergeben, ins LAN umhängen  →  Prüfungen außen
-      →  Lebensdauer-Richtlinie anwenden
+pick backup  →  plan the network (preflight)  →  restore
+      →  strip the network cards  →  boot ISOLATED  →  checks from inside
+      →  [routed only] assign IP, move onto the LAN  →  checks from outside
+      →  apply the lifetime policy
 ```
 
-Ein LXC ist damit in rund 30 Sekunden geprüft, eine 27-GB-VM in gut zwei Minuten.
+An LXC is verified in about 30 seconds, a 27 GB VM in a little over two minutes.
 
 ---
 
-## Sicherheit
+## Safety
 
-Dies ist der Teil, der über Nutzen oder Schaden entscheidet.
+This is the part that decides between usefulness and damage.
 
-### Der Testgast bekommt genau eine Netzwerkkarte
+### The test guest gets exactly one network card
 
-Ein wiederhergestellter Gast trägt **alle** Netzwerkkarten des Originals. Ein
-DNS-Server oder Reverse-Proxy hängt schnell mit sechs Karten in sechs VLANs, jede
-mit einer statischen Produktiv-IP. Würde man nur `net0` umschreiben, stünde der
-Testgast über die übrigen Karten mit den Original-Adressen im Netz und
-kollidierte mit dem laufenden Original.
+A restored guest carries **all** network cards of the original. A DNS server or
+reverse proxy easily hangs in six VLANs with six cards, each with a static
+production IP. Rewriting only `net0` would leave the test guest on the network
+under the original addresses through the remaining cards, colliding with the
+running original.
 
-Deshalb werden vor dem ersten Start **alle** Karten außer `net0` gelöscht und
-`net0` neu gesetzt. Bleibt danach eine Karte übrig, bricht der Lauf ab.
+Therefore **all** cards except `net0` are deleted before the first boot and
+`net0` is set anew. If a card remains afterwards, the run aborts.
 
-### Kein Live-Restore
+### No live restore
 
-`qmrestore --live-restore` startet die VM als Teil des Restore-Befehls, mit der
-Netzwerkkonfiguration aus dem Backup. Es gibt kein Zeitfenster, in dem sich die
-Karten vorher korrigieren ließen — die VM stünde für die Dauer des Restores mit
-den Original-Adressen im Produktivnetz. Das Verfahren ist nicht absicherbar und
-wird nicht verwendet. Praktisch kostet der Verzicht nichts, weil die Prüfungen
-ohnehin erst nach Abschluss des Restores anliefen.
+`qmrestore --live-restore` starts the VM as part of the restore command, with
+the network configuration from the backup. There is no window in which the cards
+could be corrected beforehand — the VM would sit on the production network under
+the original addresses for the duration of the restore. The approach cannot be
+made safe and is not used. In practice giving it up costs nothing, because the
+checks would only start after the restore finished anyway.
 
-### Die zwei Netzwerkmodi
+### The two network modes
 
-**`isolated`** (Standard) — Bridge ohne Uplink, zur Laufzeit angelegt. Der Gast
-kann physisch nichts erreichen. Prüfungen laufen von innen über den
-QEMU-Guest-Agent bzw. `pct exec`.
+**`isolated`** (default) — a bridge without uplink, created at runtime. The
+guest can physically reach nothing. Checks run from inside through the QEMU
+guest agent or `pct exec`.
 
-**`routed`** — der Gast bekommt eine Adresse aus dem hinterlegten Vorrat, damit
-sich Dienste so prüfen lassen, wie ein Client sie sieht. Abgesichert durch:
+**`routed`** — the guest gets an address from the configured pool so services
+can be checked the way a client sees them. Secured by:
 
-| Schutz | Wirkung |
+| Protection | Effect |
 |---|---|
-| **IP-Preflight** | Vier unabhängige Proben: ARP-Duplikatsprüfung, ICMP, Nachbarschaftstabelle, Gast-Konfigurationen. Ein Treffer bricht ab — es wird nicht geraten. |
-| **Belegte Adressen** | Adressen laufender Testgäste sind gesperrt. |
-| **Frische MAC** | Immer neu erzeugt, lokal administriert. DHCP-Reservierungen des Originals greifen nicht. |
-| **Isolierter Erststart** | Der Gast trägt die Original-Adressen, bis sie überschrieben sind. In dieser Phase hat er keinen Netzwerkpfad. |
-| **Zwei-Stufen-Übergang** | Erst IP setzen, dann Bridge wechseln. Nie umgekehrt. |
+| **IP preflight** | Four independent probes: ARP duplicate detection, ICMP, neighbour table, guest configurations. One hit aborts — nothing is guessed. |
+| **Addresses in use** | Addresses of running test guests are blocked. |
+| **Fresh MAC** | Always generated anew, locally administered. DHCP reservations of the original do not apply. |
+| **Isolated first boot** | The guest carries the original addresses until they are overwritten. During that phase it has no network path. |
+| **Two-step transition** | Set the IP first, then switch the bridge. Never the other way round. |
 
-> Der Preflight ist nur im lokalen Segment zuverlässig. Eine Adresse aus einem
-> anderen VLAN lässt sich nicht per ARP prüfen — dort bleiben ICMP und die
-> Konfigurationssuche als schwächere Proben.
+> The preflight is only reliable within the local segment. An address from
+> another VLAN cannot be checked over ARP — there, ICMP and the configuration
+> search remain as weaker probes.
 
-### Weitere Invarianten
+### Further invariants
 
-- **Scratch-Bereich 9000–9099.** Testgäste entstehen nur dort. Jede zerstörende
-  Aktion prüft das erneut. Der Bereich gehört ausschließlich Proxfy.
-- **Laufende Wiederherstellungen sind tabu.** Ein Gast, der als „stopped" mit
-  0 GB dasteht, ist nicht zwangsläufig verwaist — genau so sieht ein laufender
-  `qmrestore` aus. Vor jedem Vernichten wird auf laufende Restore-Prozesse
-  geprüft.
-- **Unverwechselbarer Name.** Der Testgast heißt `proxfy-<original>`, nie wie das
-  Original, und trägt das Tag `proxfy-test`.
-- **Aufräumen im `finally`.** Beim Dienststart werden zusätzlich Reste eines
-  abgestürzten Laufs entfernt, auch solche mit `lock=create`.
+- **Scratch range 9000–9099.** Test guests are created only there. Every
+  destructive action checks that again. The range belongs to Proxfy alone.
+- **Restores in progress are off limits.** A guest sitting there as “stopped”
+  with 0 GB is not necessarily orphaned — that is exactly what a running
+  `qmrestore` looks like. Before destroying anything, running restore processes
+  are checked for.
+- **An unmistakable name.** The test guest is called `proxfy-<original>`, never
+  the same as the original, and carries the tag `proxfy-test`.
+- **Cleanup in `finally`.** At service start, leftovers of a crashed run are
+  removed as well, including those with `lock=create`.
 
 ---
 
-## Prüfungen
+## Checks
 
-Prüfungen werden als Zeilen bearbeitet: Typ auswählen, passende Felder
-ausfüllen, Schalter für „von außen" und „Pflicht". Die JSON-Ansicht bleibt als
-Expertenmodus erhalten.
+Checks are edited as rows: pick a type, fill in the matching fields, toggle
+“from outside” and “required”. The JSON view remains as an expert mode.
 
-| Typ | Pflichtfelder | Zweck |
+| Type | Required fields | Purpose |
 |---|---|---|
-| `boot` | — | Gast antwortet überhaupt (läuft immer zuerst) |
-| `service` | `unit` | systemd-Dienst ist `active` |
-| `port` | `port` | TCP-Port lauscht |
-| `http` | `url` | Statuscode, optional `expect_body` als Regex |
-| `tls` | — | TLS-Handschlag und Restlaufzeit, `port`, `min_days` |
-| `command` | `run` oder `argv` | Exitcode, optional `expect_output` als Regex |
-| `file` | `path` | Datei vorhanden, optional `min_bytes` |
-| `newest_file` | `path` | Alter der jüngsten Datei, `max_age_hours` |
-| `file_count` | `path` | Dateianzahl, `min_count`, `pattern` |
-| `postgres` / `mysql` | — | echte Abfrage, optional `expect` |
-| `db_fresh` | `query` | Alter des jüngsten Datensatzes, `max_age_hours` |
+| `boot` | — | the guest responds at all (always runs first) |
+| `service` | `unit` | systemd service is `active` |
+| `port` | `port` | TCP port is listening |
+| `http` | `url` | status code, optionally `expect_body` as a regex |
+| `tls` | — | TLS handshake and remaining validity, `port`, `min_days` |
+| `command` | `run` or `argv` | exit code, optionally `expect_output` as a regex |
+| `file` | `path` | file exists, optionally `min_bytes` |
+| `newest_file` | `path` | age of the newest file, `max_age_hours` |
+| `file_count` | `path` | number of files, `min_count`, `pattern` |
+| `postgres` / `mysql` | — | a real query, optionally `expect` |
+| `db_fresh` | `query` | age of the newest record, `max_age_hours` |
 
-Zusatzfelder: `external: true` prüft vom Host aus gegen die vergebene Adresse
-(setzt `routed` voraus), `required: false` zählt nicht gegen das Gesamtergebnis.
+Extra fields: `external: true` checks from the host against the assigned address
+(requires `routed`), `required: false` does not count against the overall
+result.
 
-### Der Testgast als Werkbank
+### The test guest as a workbench
 
-Zwei Funktionen setzen einen **laufenden** Testgast voraus — also einen Lauf mit
-der Lebensdauer „Zeitfenster" oder „stehen lassen". Beide greifen ausschließlich
-auf Testgäste zu, nie auf produktive VMs oder Container.
+Two functions need a **running** test guest — that is, a run with the lifetime
+“time window” or “keep”. Both only ever touch test guests, never production VMs
+or containers.
 
-**Aus Testgast erkennen** untersucht den laufenden Testgast und schlägt fertige
-Prüfungen vor: laufende systemd-Dienste ohne die Grundausstattung, lauschende
-Ports samt Prozessnamen, Docker-Container, erkannte Datenbanken. Erkannt wird
-damit, was tatsächlich **im Backup** steckt.
+**Discover from test guest** examines the running test guest and proposes
+finished checks: running systemd services beyond the base set, listening ports
+along with process names, Docker containers, detected databases. What it finds
+is what is actually **in the backup**.
 
-**Probelauf** (▶ an jeder Zeile) führt eine einzelne Prüfung sofort gegen den
-laufenden Testgast aus, ohne neuen Restore.
+**Trial run** (▶ on every row) runs a single check straight against the running
+test guest, without restoring again.
 
-> Vorsicht bei `isolated`: Dienste, die beim Start Daten aus dem Internet ziehen,
-> scheitern ohne Netzwerk. paperless-ngx etwa lädt über `uv run` bei jedem Start
-> ein Wheel nach und bricht in der Isolation mit einem DNS-Fehler ab. Für solche
-> Gäste ist `routed` nötig, oder die Prüfung wird auf `required: false` gesetzt.
+> Careful with `isolated`: services that pull data from the internet at startup
+> fail without a network. paperless-ngx, for instance, fetches a wheel through
+> `uv run` on every start and aborts in isolation with a DNS error. Such guests
+> need `routed`, or the check is set to `required: false`.
 
 ---
 
-## Lebensdauer des Testgastes
+## Lifetime of the test guest
 
-| Richtlinie | Verhalten |
+| Policy | Behaviour |
 |---|---|
-| `destroy` | sofort nach den Prüfungen vernichten. Richtig für den Automatiklauf. |
-| `ttl` | bleibt N Minuten stehen, danach automatisch entfernt |
-| `manual` | bleibt stehen, bis jemand ihn unter „Testgäste" entfernt |
+| `destroy` | destroy right after the checks. The right choice for unattended runs. |
+| `ttl` | stays for N minutes, then removed automatically |
+| `manual` | stays until someone removes it under “Test guests” |
 
-Scheitert ein Lauf, **bevor** der Gast lief, wird immer vernichtet — es gäbe
-nichts zu untersuchen. Scheitert er danach, greift die Richtlinie: einen
-durchgefallenen Gast will man sich ansehen.
+If a run fails **before** the guest was up, it is always destroyed — there would
+be nothing to examine. If it fails afterwards, the policy applies: a guest that
+failed is one you want to look at.
 
 ---
 
-## Test-Adressen
+## Test addresses
 
-Einzelne Adressen und Bereiche:
+Single addresses and ranges:
 
 ```
-192.168.1.240                 einzeln
-192.168.1.240/24              einzeln mit Präfix
-192.168.1.15-38               Bereich, Kurzform
-192.168.1.15-192.168.1.38     Bereich, vollständig
+192.168.1.240                 single
+192.168.1.240/24              single with prefix
+192.168.1.15-38               range, short form
+192.168.1.15-192.168.1.38     range, full form
 ```
 
-Ein Bereich erlaubt **mehrere gleichzeitige Läufe** im Modus `routed` — jeder
-Lauf nimmt die nächste freie Adresse und gibt sie danach zurück. Mit einer
-einzelnen Adresse ging immer nur ein Gast.
+A range allows **several runs at the same time** in `routed` mode — each run
+takes the next free address and returns it afterwards. With a single address
+only one guest was ever possible.
 
 ---
 
-## Zeitpläne
+## Schedules
 
-Uhrzeit plus Wochentage, mit Mehrfachauswahl der Gäste. Die Gäste laufen
-nacheinander durch die Warteschlange, nicht parallel — parallele Restores würden
-sich um Storage-Bandbreite und Scratch-Slots streiten.
+Time of day plus weekdays, with multiple selection of guests. The guests go
+through the queue one after another, not in parallel — parallel restores would
+fight over storage bandwidth and scratch slots.
 
-Jeder Zeitplan lässt sich vollständig nachträglich ändern und mit „Jetzt
-ausführen" sofort auslösen. Die letzten Ausführungen stehen beim Zeitplan selbst.
+Every schedule can be changed completely afterwards and triggered immediately
+with “Run now”. Its recent runs are shown with the schedule itself.
 
 ---
 
-## Benutzer und Rollen
+## Users and roles
 
-Das **erste** angelegte Konto wird Super Admin. Danach ist die
-Einrichtungsmaske dauerhaft geschlossen.
+The **first** account created becomes super admin. After that the setup form is
+closed for good.
 
-| | Super Admin | Admin | Benutzer |
+| | Super admin | Admin | User |
 |---|---|---|---|
-| Verifikationen starten, Zeitpläne pflegen | ja | ja | ja |
-| Eigenes Konto und eigener zweiter Faktor | ja | ja | ja |
-| Benutzer anlegen und entfernen | alle | nur Benutzer | nein |
-| Zwei-Faktor zurücksetzen | bei allen | nur bei Benutzern | nein |
-| Rollen vergeben | ja | nein | nein |
-| Anmeldeversuche, Sperren aufheben | ja | ja | nein |
-| Einstellungen ändern | ja | nein | nein |
+| Start verifications, maintain schedules | yes | yes | yes |
+| Own account and own second factor | yes | yes | yes |
+| Create and remove users | all | users only | no |
+| Reset two-factor | for everyone | for users only | no |
+| Hand out roles | yes | no | no |
+| Sign-in attempts, lift locks | yes | yes | no |
+| Change settings | yes | no | no |
 
-Der letzte Super Admin lässt sich weder löschen noch herabstufen — sonst könnte
-niemand mehr Einstellungen ändern.
+The last super admin can neither be deleted nor demoted — otherwise nobody could
+change settings any more.
 
-Geprüft wird **serverseitig** bei jedem Endpunkt. Was die Oberfläche ausblendet,
-ist Bequemlichkeit, kein Schutz.
+Everything is checked **server-side** at every endpoint. What the interface
+hides is convenience, not protection.
 
-### Anmeldung
+### Signing in
 
-Sitzungen liegen serverseitig in SQLite. Der Browser hält nur ein
-`HttpOnly`-Cookie — kein Token, kein JWT, nichts, was JavaScript auslesen könnte.
-Jede Sitzung lässt sich sofort serverseitig beenden.
+Sessions live server-side in SQLite. The browser holds nothing but an `HttpOnly`
+cookie — no token, no JWT, nothing JavaScript could read. Every session can be
+ended server-side at once.
 
-**Zwei-Faktor** (TOTP) je Konto aktivierbar, mit zehn Wiederherstellungscodes.
-Vor dem zweiten Faktor entsteht **keine** Sitzung.
+**Two-factor** (TOTP) can be enabled per account, with ten recovery codes. Until
+the second factor is entered, **no** session exists.
 
-**Anmeldeversuche:**
+**Sign-in attempts:**
 
-| Versuche | Verhalten |
+| Attempts | Behaviour |
 |---|---|
-| 1–3 | ohne Verzögerung |
-| 4, 5, 6+ | 2 s, 4 s, dann 8 s |
-| ab 10 | gesperrt für 15 Minuten, auch bei richtigem Passwort |
+| 1–3 | no delay |
+| 4, 5, 6+ | 2 s, 4 s, then 8 s |
+| from 10 | locked for 15 minutes, even with the correct password |
 
-Gezählt wird getrennt nach Herkunfts-IP und Benutzerkennung; es zählt der
-schlechtere Wert. Abgewiesen wird, **bevor** der Anmeldedienst das Passwort zu
-sehen bekommt. Die Schwellen sind änderbar.
+Counted separately by origin IP and by user identifier; the worse of the two
+applies. Requests are turned away **before** the login service ever sees the
+password. The thresholds are adjustable.
 
 ---
 
-## Einstellungen
+## Settings
 
-Alles ist in der Oberfläche änderbar. Weil manche Werte aussperren können, sind
-sie gestaffelt abgesichert:
+Everything is changeable in the interface. Because some values can lock you out,
+they are secured in stages:
 
-| Gruppe | Absicherung |
+| Group | Safeguard |
 |---|---|
-| Standardwerte | keine — wirken beim nächsten Lauf |
-| Proxmox-Anbindung | Verbindungsprüfung erzwungen, Speichern erst danach möglich |
-| Zugriff & Netzwerk | Passwort nötig, danach zehn Minuten Rücknahme-Frist |
-| Sperr-Schwellen | Passwort nötig |
+| Defaults | none — they apply on the next run |
+| Proxmox connection | connection test enforced, saving only possible afterwards |
+| Access & network | password required, then a ten-minute rollback window |
+| Lockout thresholds | password required |
 
-Die Datenbank überlagert nur die Datei. Rettungsweg, falls die Oberfläche
-unerreichbar wird:
+The database only overlays the file. Way back in, should the interface become
+unreachable:
 
 ```bash
 python3 -m proxfy.cli config show
 python3 -m proxfy.cli config reset
 ```
 
-### Ins Internet stellen
+### Putting it on the internet
 
-1. **TLS davor**, etwa über einen Reverse Proxy.
-2. In `auth.env` `PROXFY_SECURE_COOKIES=1` setzen.
-3. In `auth.env` `BETTER_AUTH_URL` und `PROXFY_TRUSTED_ORIGINS` auf den
-   öffentlichen Namen setzen.
-4. `trust_forwarded_for` einschalten, damit die Sperre die echte Herkunftsadresse
-   sieht. **Nur**, wenn wirklich ein Proxy davorsteht.
-5. Zwei-Faktor für alle Konten aktivieren.
+1. **TLS in front**, for example through a reverse proxy.
+2. Set the address from outside under *Settings → Access and network*.
+3. Switch on “Session cookie over HTTPS only”.
+4. Switch on “Running behind a reverse proxy”, so the lockout sees the real
+   origin address. **Only** if a proxy really is in front.
+5. Enable two-factor for every account.
 
-> Der Container hält einen SSH-Schlüssel mit Root-Rechten auf den Hypervisor.
-> Wer den Container übernimmt, übernimmt Proxmox.
+> The container holds an SSH key with root rights on the hypervisor. Whoever
+> takes over the container takes over Proxmox.
 
 ---
 
-## Kommandozeile
+## Command line
 
 ```bash
 python3 -m proxfy.cli snapshots --latest-only
@@ -478,23 +493,24 @@ python3 -m proxfy.cli reap --force
 python3 -m proxfy.cli config show
 ```
 
-Exitcode `0`, wenn alle Läufe verifiziert wurden.
+Exit code `0` when every run was verified.
 
 ---
 
-## Grenzen
+## Limits
 
-- **Ohne QEMU-Guest-Agent** ist bei VMs nur „bootet irgendwie" feststellbar.
-  Container sind im Vorteil: `pct exec` funktioniert immer.
-- **Der Preflight meldet auch Gateway-Adressen** als belegt, weil er die
-  Gast-Konfigurationen textuell durchsucht. Konservativ, aber gelegentlich ein
-  Fehlalarm.
-- **Ein Lauf gleichzeitig.** Mehrfachauswahl reiht ein, statt zu parallelisieren.
-- **Kein PDF-Bericht.** Die Daten liegen vollständig in SQLite, nur die Ausgabe
-  fehlt.
+- **Without the QEMU guest agent**, VMs only ever tell you “it boots somehow”.
+  Containers have the advantage: `pct exec` always works.
+- **The preflight reports gateway addresses as taken** as well, because it
+  searches guest configurations as text. Conservative, but occasionally a false
+  alarm.
+- **One run at a time.** Multiple selection queues them rather than
+  parallelising.
+- **No PDF report.** The data sits complete in SQLite, only the output is
+  missing.
 
 ---
 
-## Lizenz
+## Licence
 
 MIT

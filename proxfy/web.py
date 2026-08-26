@@ -25,6 +25,7 @@ from . import aussenadresse
 from . import checks as checkmod
 from . import discover as discovery
 from . import netguard, pve
+from . import texte
 from .config import SCRATCH_VMID_MAX, SCRATCH_VMID_MIN, Config
 from .services import Janitor, JobManager, Scheduler
 from .ssh import Host
@@ -62,7 +63,20 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- Hilfsmittel ---------------------------------------------------------
 
+    def _sprache(self) -> str:
+        """Sprache des Aufrufers. Einmal je Anfrage ermittelt."""
+        if getattr(self, "_spr", None) is None:
+            try:
+                ident = self.identity()
+                self._spr = self.store.sprache(ident.user_id) if ident else "de"
+            except Exception:
+                self._spr = "de"
+        return self._spr
+
     def _json(self, obj, code: int = 200) -> None:
+        # Uebersetzt wird hier, an der Ausgabegrenze - nicht an den zweihundert
+        # Stellen, an denen eine Meldung entsteht.
+        obj = texte.durchgehen(obj, self._sprache())
         body = json.dumps(obj, ensure_ascii=False, default=str).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -424,6 +438,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         u = urllib.parse.urlparse(self.path)
+        self._spr = None
         q = urllib.parse.parse_qs(u.query)
         try:
             # Der Waechter steht vor allem anderen.
@@ -530,6 +545,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         u = urllib.parse.urlparse(self.path)
+        self._spr = None
         try:
             # Waechter und Durchreichen VOR dem Lesen des Rumpfes - der
             # Anmeldedienst liest ihn selbst.
@@ -773,6 +789,7 @@ class Handler(BaseHTTPRequestHandler):
             self.manager.unsubscribe(q)
 
     def _sse(self, line: str) -> None:
+        line = texte.uebersetze(line, self._sprache())
         self.wfile.write(("data: " + json.dumps({"line": line}, ensure_ascii=False)
                           + "\n\n").encode("utf-8"))
         self.wfile.flush()
