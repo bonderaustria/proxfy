@@ -28,12 +28,14 @@ from .store import Store
 
 STATIC = pathlib.Path(__file__).parent / "static"
 _CTYPES = {"html": "text/html; charset=utf-8",
+           "png": "image/png",
            "js": "application/javascript; charset=utf-8",
            "css": "text/css; charset=utf-8"}
 
 # Pfade, die ohne Anmeldung erreichbar sein muessen - sonst kaeme niemand je
 # zur Anmeldemaske. Bewusst kurz gehalten und ausdruecklich aufgezaehlt.
-_OFFEN = {"/login", "/login.html", "/login.js", "/api/me", "/api/setup"}
+_OFFEN = {"/login", "/login.html", "/login.js", "/api/me", "/api/setup",
+          "/logo.png", "/favicon.png", "/favicon.ico"}
 
 # Anmeldeversuche, die gebremst und gesperrt werden.
 _ANMELDEPFADE = ("/api/auth/sign-in", "/api/auth/two-factor/verify-totp",
@@ -360,6 +362,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._file("index.html")
             if u.path in ("/app.js", "/style.css"):
                 return self._file(u.path.lstrip("/"))
+            if u.path in ("/logo.png", "/favicon.png"):
+                return self._file(u.path.lstrip("/"))
+            if u.path == "/favicon.ico":
+                return self._file("favicon.png")
 
             if u.path == "/api/users":
                 return self._json(self._benutzer_endpunkt(u.path, {}))

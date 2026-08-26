@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Proxfy</title>
+<link rel="icon" type="image/png" href="/favicon.png">
 <style>
 :root{
   --bg:#0f141b; --panel:#171e28; --panel2:#1e2733; --sunken:#0b1017;
   --line:#2a3541; --line-soft:#212b36;
-  --fg:#e4ecf4; --muted:#8595a8; --dim:#63728a; --accent:#4d9dff;
+  --fg:#e4ecf4; --muted:#8595a8; --dim:#63728a; --accent:#1fd6bd;
   --ok:#43b96a; --fail:#ef5f57; --warn:#d5a12a; --skip:#63728a;
   --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
   --r:7px;
@@ -22,7 +23,7 @@ h1,h2{text-wrap:balance;margin:0}
 header{display:flex;align-items:center;gap:13px;padding:13px 20px;flex-wrap:wrap;
        background:var(--panel);border-bottom:1px solid var(--line)}
 header h1{font-size:18px;font-weight:600;letter-spacing:-.015em;white-space:nowrap}
-header .dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+header .logo{height:26px;width:auto;display:block;flex:none}
 header .claim{color:var(--dim);font-size:12.5px;white-space:nowrap}
 header .spacer{flex:1}
 .whoami{font-family:var(--mono);font-size:12.5px;color:var(--muted)}
@@ -230,7 +231,7 @@ body[data-role="user"] .nur-admin{display:none !important}
 <body>
 
 <header>
-  <span class="dot"></span>
+  <img class="logo" src="/logo.png" alt="Proxfy">
   <h1>Proxfy</h1>
   <span class="claim">Restore-Verifikation f&uuml;r Proxmox Backup Server</span>
   <span class="spacer"></span>

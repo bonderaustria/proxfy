@@ -1,3 +1,5 @@
+<img src="proxfy/static/logo.png" alt="Proxfy" width="150">
+
 # Proxfy
 
 **Prüft, ob sich eure Proxmox-Backups wirklich wiederherstellen lassen — und ob

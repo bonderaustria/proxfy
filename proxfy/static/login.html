@@ -4,10 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Anmeldung &ndash; Proxfy</title>
+<link rel="icon" type="image/png" href="/favicon.png">
 <style>
 :root{
   --bg:#11151c; --panel:#181e27; --panel2:#1f2731; --line:#2b3440;
-  --fg:#e6edf3; --muted:#8b98a8; --accent:#4a9eff;
+  --fg:#e6edf3; --muted:#8b98a8; --accent:#1fd6bd;
   --ok:#3fb950; --fail:#f85149; --warn:#d29922;
   --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
 }
@@ -18,6 +19,7 @@ body{margin:0;min-height:100vh;background:var(--bg);color:var(--fg);
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
       width:min(400px,100%);padding:26px 26px 22px;
       box-shadow:0 18px 50px rgba(0,0,0,.45)}
+.logo{height:56px;width:auto;display:block;margin:0 auto 14px}
 h1{font-size:17px;margin:0 0 4px}
 .sub{color:var(--muted);font-size:12.5px;margin-bottom:20px}
 label{display:block;font-size:12px;color:var(--muted);margin:12px 0 4px}
@@ -44,6 +46,8 @@ button.ghost{background:none;border-color:var(--line);color:var(--muted);
 <body>
 <div class="card">
 
+  <img class="logo" src="/logo.png" alt="Proxfy">
+
   <!-- Ersteinrichtung: solange kein Konto besteht -->
   <div class="step" id="s-setup">
     <h1>Ersteinrichtung</h1>
@@ -62,7 +66,6 @@ button.ghost{background:none;border-color:var(--line);color:var(--muted);
 
   <!-- Anmeldung -->
   <div class="step" id="s-login">
-    <h1>Proxfy</h1>
     <div class="sub">Restore-Verifikation f&uuml;r Proxmox Backup Server.</div>
     <label>E-Mail</label>
     <input id="li-mail" type="email" autocomplete="username">
