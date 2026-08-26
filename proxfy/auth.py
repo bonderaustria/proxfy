@@ -171,11 +171,19 @@ class AuthClient:
         # erlaubten Herkuenfte. Das ist der CSRF-Schutz - wer sie unterschlaegt,
         # bekommt "Missing or null Origin" und schaltet den Schutz nicht etwa
         # ab, sondern macht die Endpunkte unbenutzbar.
+        # Gross- und Kleinschreibung darf hier keine Rolle spielen. Spricht der
+        # Browser HTTP/2 mit einem Reverse Proxy, kommen die Kopfzeilen
+        # durchgehend klein an - "content-type" statt "Content-Type". Wer
+        # danach mit fester Schreibweise sucht, findet nichts, reicht den
+        # Inhaltstyp nicht weiter, und Better Auth liest den Rumpf gar nicht
+        # erst als JSON: "[body.email] expected string, received undefined".
+        klein = {k.lower(): v for k, v in headers.items()}
         fwd = {}
         for name in ("Content-Type", "Cookie", "Accept", "User-Agent",
                      "Origin", "Referer"):
-            if headers.get(name):
-                fwd[name] = headers[name]
+            wert = klein.get(name.lower())
+            if wert:
+                fwd[name] = wert
 
         req = urllib.request.Request(self.base + path, data=body or None, method=method)
         for k, v in fwd.items():
