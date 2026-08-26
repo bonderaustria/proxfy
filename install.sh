@@ -230,7 +230,7 @@ Fertig.
 
   Weboberflaeche   http://$PUBLIC_IP:$PORT/
   Konfiguration    $DEST/config.yaml
-  Geheimnisse      $DEST/auth.env   (Rechte 600, nicht ins Git)
+  Geheimnisse      $DEST/auth.env   (nur fuer root lesbar)
   Datenbanken      $DEST/proxfy.db, $DEST/auth.db
   Deinstallation   bash $DEST/uninstall.sh
 
