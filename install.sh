@@ -100,7 +100,7 @@ if [ "$(_psql "SELECT 1 FROM pg_roles WHERE rolname='$DBROLLE'")" != "1" ]; then
     say "  Rolle $DBROLLE angelegt"
 fi
 if [ "$(_psql "SELECT 1 FROM pg_database WHERE datname='proxfy'")" != "1" ]; then
-    su -s /bin/sh postgres -c "createdb -O '$DBROLLE' proxfy"
+    su -s /bin/sh postgres -c "createdb -O '$DBROLLE' -E UTF8 -T template0 --lc-collate=C --lc-ctype=C proxfy"
     say "  Datenbank proxfy angelegt"
 else
     say "  Datenbank proxfy besteht bereits"

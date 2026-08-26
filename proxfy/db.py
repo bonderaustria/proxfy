@@ -63,7 +63,8 @@ class Verbindung:
     """Verbindung mit demselben Verhalten, das store.py bisher kannte."""
 
     def __init__(self, dsn: str):
-        self._conn = psycopg.connect(dsn, row_factory=dict_row, autocommit=False)
+        self._conn = psycopg.connect(dsn, row_factory=dict_row, autocommit=False,
+                                     client_encoding="UTF8")
 
     def cursor(self) -> Cursor:
         return Cursor(self._conn.cursor())

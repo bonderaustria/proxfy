@@ -107,8 +107,9 @@ def _zeilen(pfad: pathlib.Path, tabelle: str) -> tuple[list[str], list[tuple]]:
 
 def _spalten(ziel, tabelle: str) -> dict[str, str]:
     return {r["column_name"]: r["data_type"] for r in ziel.execute(
-        "SELECT column_name, data_type FROM information_schema.columns "
-        "WHERE table_name=?", (tabelle,))}
+        "SELECT column_name::text AS column_name, data_type::text AS data_type "
+        "FROM information_schema.columns "
+        "WHERE table_schema='public' AND table_name=?", (tabelle,))}
 
 
 def _belegt(ziel, tabelle: str) -> bool:

@@ -148,8 +148,8 @@ def _spalten(c, tabelle: str) -> set[str]:
     Informationsschema.
     """
     return {r["column_name"] for r in c.execute(
-        "SELECT column_name FROM information_schema.columns WHERE table_name=?",
-        (tabelle,))}
+        "SELECT column_name::text AS column_name FROM information_schema.columns "
+        "WHERE table_schema='public' AND table_name=?", (tabelle,))}
 
 
 class Store:
