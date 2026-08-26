@@ -1488,6 +1488,10 @@ async function loadEinstellungen() {
     // Zugriff
     const fwd = $("pm-fwd");
     if (fwd) fwd.checked = !!w["trust_forwarded_for"];
+    const pub = $("pm-public");
+    if (pub) pub.value = w["public_url"] || "";
+    const sec = $("pm-secure");
+    if (sec) sec.checked = !!w["secure_cookies"];
 
     // Sperr-Schwellen
     setzeWert("sp-delay", w["delay_from"]);
@@ -1603,6 +1607,33 @@ $("btn-def-save").onclick = () => {
 
 $("btn-def-reset").onclick = () => loadEinstellungen();
 
+
+// --- Reverse Proxy -----------------------------------------------------------
+$("btn-proxycheck").onclick = async () => {
+  const url = $("pm-public").value.trim();
+  const out = $("proxy-out");
+  if (!url) { out.innerHTML = `<div class="warnbox">Trage zuerst die Adresse von außen ein.</div>`; return; }
+  out.innerHTML = `<div class="infobox">Prüfe ${url} …</div>`;
+  let r;
+  try { r = await api("/api/settings/proxy", { public_url: url }); }
+  catch (e) { out.innerHTML = `<div class="warnbox">${e.message}</div>`; return; }
+  // Ein selbst ausgestelltes Zertifikat sagt nichts darüber, ob der Proxy
+  // richtig zeigt. Dann noch einmal ohne Prüfung, aber mit deutlichem Hinweis.
+  let zertHinweis = "";
+  if (r && r.zertifikat) {
+    zertHinweis = `<div class="warnbox">${r.message}</div>`;
+    r = await api("/api/settings/proxy", { public_url: url, insecure: true });
+  }
+  out.innerHTML = zertHinweis + (r && r.ok
+    ? `<div class="okbox">${r.message}</div>`
+    : `<div class="warnbox">${(r && r.message) || "Prüfung fehlgeschlagen."}</div>`);
+};
+
+$("btn-copyadv").onclick = () => {
+  navigator.clipboard.writeText($("px-adv").textContent);
+  $("btn-copyadv").textContent = "Kopiert";
+  setTimeout(() => { $("btn-copyadv").textContent = "Block kopieren"; }, 1500);
+};
 // --- Zugriff und Netzwerk ---------------------------------------------------
 $("btn-net-save").onclick = async () => {
   const pw = $("net-pass").value;
@@ -1611,7 +1642,9 @@ $("btn-net-save").onclick = async () => {
       '<div class="failbox">Bitte das eigene Passwort zur Bestätigung eingeben.</div>';
     return;
   }
-  const r = await speichere("zugriff", { trust_forwarded_for: $("pm-fwd").checked },
+  const r = await speichere("zugriff", { trust_forwarded_for: $("pm-fwd").checked,
+                                        public_url: $("pm-public").value.trim(),
+                                        secure_cookies: $("pm-secure").checked },
                             "net-out", pw);
   $("net-pass").value = "";
   if (r && r.ruecknahme) {

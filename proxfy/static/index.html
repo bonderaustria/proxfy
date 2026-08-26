@@ -130,6 +130,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 /* ---------- Meldungen ---------- */
 .warnbox,.okbox,.failbox,.infobox{margin-top:11px;padding:10px 12px;border-radius:var(--r);
        font-size:12.5px;line-height:1.5}
+.pxtab td{padding:3px 14px 3px 0;vertical-align:top}
+.pxtab td:first-child{color:var(--dim)}
 .warnbox{background:#2a2312;border:1px solid #4a3c17;color:#e8c66a}
 .okbox{background:#10261a;border:1px solid #1e4a2c;color:#7ee787}
 .failbox{background:#261414;border:1px solid #54241f;color:#ffaba4;
@@ -599,6 +601,15 @@ body[data-role="user"] .nur-admin{display:none !important}
             <div><label>Anmeldedienst</label><input class="mono" id="pm-auth" readonly></div>
           </div>
 
+          <div><label for="pm-public">Adresse von au&szlig;en (Reverse Proxy)</label>
+            <input class="mono" id="pm-public" placeholder="https://verify.example.org">
+            <div class="hint">Die Adresse, unter der der Browser Proxfy sieht. Steht ein Proxy
+              davor, kommt jede Anfrage mit dessen Herkunft an &mdash; ohne diesen Eintrag
+              lehnt der Anmeldedienst sie mit <code>Invalid origin</code> ab. Leer lassen,
+              wenn Proxfy direkt aufgerufen wird. Beginnt der Eintrag mit <code>https://</code>,
+              gibt der Browser das Sitzungscookie nur noch verschl&uuml;sselt heraus &mdash;
+              die Anmeldung l&auml;uft dann <b>ausschlie&szlig;lich</b> &uuml;ber den Proxy,
+              nicht mehr &uuml;ber <code>http://</code> im LAN.</div></div>
           <label style="display:flex;gap:10px;align-items:flex-start;margin-top:16px;
                         padding:12px;background:var(--sunken);border:1px solid var(--line-soft);
                         border-radius:var(--r)">
@@ -609,6 +620,47 @@ body[data-role="user"] .nur-admin{display:none !important}
                 wenn wirklich ein Proxy davorsteht &mdash; sonst kann sich jeder eine fremde
                 Herkunftsadresse ausdenken und die Anmeldesperre umgehen.</small></span>
           </label>
+
+          <label style="display:flex;gap:10px;align-items:flex-start;margin-top:10px;
+                        padding:12px;background:var(--sunken);border:1px solid var(--line-soft);
+                        border-radius:var(--r)">
+            <input type="checkbox" id="pm-secure" style="margin-top:3px">
+            <span style="color:var(--fg);font-size:13.5px">Sitzungscookie nur &uuml;ber HTTPS
+              <small style="display:block;color:var(--dim);font-size:12.5px;margin-top:3px">
+                Richtig, sobald Proxfy aus dem Internet erreichbar ist. Danach kommst du
+                <b>nur noch &uuml;ber den Proxy</b> hinein &mdash; der Aufruf &uuml;ber
+                <code>http://</code> im eigenen Netz nimmt das Cookie dann nicht mehr an.</small></span>
+          </label>
+          <div class="btns" style="margin-top:10px">
+            <button id="btn-proxycheck">Weg &uuml;ber den Proxy pr&uuml;fen</button>
+          </div>
+          <div id="proxy-out"></div>
+
+          <details style="margin-top:14px">
+            <summary style="cursor:pointer;color:var(--accent);font-size:13px">
+              Einstellungen f&uuml;r den Proxy anzeigen</summary>
+            <div class="hint" style="margin-top:10px">
+              Im Nginx Proxy Manager unter <b>Hosts &rarr; Proxy Hosts &rarr; Add</b>:
+              <table style="margin:8px 0;border-collapse:collapse" class="pxtab">
+                <tr><td>Domain Names</td><td class="mono" id="px-domain">verify.example.org</td></tr>
+                <tr><td>Scheme</td><td class="mono">http</td></tr>
+                <tr><td>Forward Hostname / IP</td><td class="mono" id="px-ip"></td></tr>
+                <tr><td>Forward Port</td><td class="mono">8099</td></tr>
+                <tr><td>Websockets Support</td><td class="mono">an</td></tr>
+                <tr><td>Block Common Exploits</td><td class="mono">an</td></tr>
+              </table>
+              Unter <b>SSL</b> ein Zertifikat w&auml;hlen und <b>Force SSL</b> einschalten.
+              Unter <b>Advanced</b> geh&ouml;rt dieser Block hinein &mdash; ohne ihn bleibt
+              das mitlaufende Protokoll eines Laufs stehen, weil der Proxy den Datenstrom
+              sammelt statt ihn durchzureichen:
+              <pre class="mono" id="px-adv">proxy_buffering off;
+proxy_cache off;
+proxy_read_timeout 3600s;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;</pre>
+              <button class="sm" id="btn-copyadv">Block kopieren</button>
+            </div>
+          </details>
 
           <label for="net-pass">Dein Passwort zur Best&auml;tigung</label>
           <input id="net-pass" type="password" autocomplete="current-password">

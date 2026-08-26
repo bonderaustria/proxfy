@@ -99,6 +99,7 @@ else
 BETTER_AUTH_SECRET=$(openssl rand -base64 36 | tr -d '\n')
 PROXFY_INTERNAL_SECRET=$(openssl rand -hex 32)
 BETTER_AUTH_URL=http://$PUBLIC_IP:$PORT
+PROXFY_BASE_ORIGINS=http://$PUBLIC_IP:$PORT,http://$(hostname):$PORT,http://localhost:$PORT
 PROXFY_TRUSTED_ORIGINS=http://$PUBLIC_IP:$PORT,http://$(hostname):$PORT,http://localhost:$PORT
 PROXFY_AUTH_DB=$DEST/auth.db
 PROXFY_AUTH_PORT=$AUTH_PORT
@@ -194,8 +195,7 @@ cat > /etc/systemd/system/proxfy.service <<UNIT
 Description=Restore-Verifikation fuer Proxmox Backup Server
 Documentation=file://$DEST/README.md
 After=network-online.target proxfy-auth.service
-Wants=network-online.target
-Requires=proxfy-auth.service
+Wants=network-online.target proxfy-auth.service
 
 [Service]
 Type=simple

@@ -79,6 +79,16 @@ class Config:
     # und damit die Anmeldesperre umgehen.
     trust_forwarded_for: bool = False
 
+    # Adresse, unter der der Browser Proxfy sieht, wenn ein Reverse Proxy
+    # davorsteht. Leer bedeutet: direkter Zugriff, es gilt die eigene Adresse.
+    # Ohne diesen Eintrag weist der Anmeldedienst jede Anfrage vom Proxy als
+    # fremde Herkunft ab.
+    public_url: str = ""
+    # Sitzungscookie nur ueber HTTPS herausgeben. Sperrt zugleich den Zugang
+    # ueber http:// im eigenen Netz aus - deshalb eine bewusste Entscheidung
+    # und keine Folge der Aussenadresse.
+    secure_cookies: bool = False
+
     # Voreinstellungen fuer neue Laeufe, in der Oberflaeche aenderbar.
     default_keep: str = "destroy"
     default_ttl: int = 60
@@ -120,6 +130,8 @@ class Config:
             "restore.agent_timeout": self.restore.agent_timeout,
             "default_keep": self.default_keep,
             "default_ttl": self.default_ttl,
+            "public_url": self.public_url,
+            "secure_cookies": self.secure_cookies,
             "trust_forwarded_for": self.trust_forwarded_for,
             "delay_from": self.delay_from,
             "lock_from": self.lock_from,
@@ -135,4 +147,6 @@ class Config:
             targets=raw.get("targets", []),
             auth=AuthConfig(**raw.get("auth", {})),
             trust_forwarded_for=bool(raw.get("trust_forwarded_for", False)),
+            public_url=str(raw.get("public_url", "") or ""),
+            secure_cookies=bool(raw.get("secure_cookies", False)),
         )

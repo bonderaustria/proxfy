@@ -20,7 +20,7 @@ const DB_PATH = process.env.PROXFY_AUTH_DB || "/opt/proxfy/auth.db";
 const PUBLIC_URL = process.env.BETTER_AUTH_URL || "http://localhost:8099";
 
 export const auth = betterAuth({
-  appName: "Restore-Verifikation",
+  appName: "Proxfy",
   database: new Database(DB_PATH),
   baseURL: PUBLIC_URL,
   basePath: "/api/auth",
@@ -63,5 +63,5 @@ export const auth = betterAuth({
   trustedOrigins: (process.env.PROXFY_TRUSTED_ORIGINS || PUBLIC_URL)
     .split(",").map((s) => s.trim()).filter(Boolean),
 
-  plugins: [twoFactor({ issuer: "Restore-Verifikation" })],
+  plugins: [twoFactor({ issuer: "Proxfy" })],
 });

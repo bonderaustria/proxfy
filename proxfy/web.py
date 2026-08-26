@@ -13,11 +13,15 @@ import dataclasses
 import json
 import pathlib
 import queue
+import ssl
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import auth as authmod
+from . import aussenadresse
 from . import checks as checkmod
 from . import discover as discovery
 from . import netguard, pve
@@ -182,7 +186,7 @@ class Handler(BaseHTTPRequestHandler):
                      "restore.boot_timeout", "restore.agent_timeout",
                      "default_keep", "default_ttl"),
         "proxmox": ("host.host", "host.user", "host.key_file"),
-        "zugriff": ("trust_forwarded_for",),
+        "zugriff": ("trust_forwarded_for", "public_url", "secure_cookies"),
         "sperre": ("delay_from", "lock_from", "lock_minutes"),
     }
     # Gruppen, die ohne erneute Passworteingabe nicht gespeichert werden.
@@ -225,6 +229,53 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             return {"ok": False, "message": f"Keine Verbindung: {e}"}
 
+    def _proxy_pruefen(self, body: dict) -> dict:
+        """Ruft die Aussenadresse auf und sagt, was zurueckkam.
+
+        Prueft die Kette von aussen nach innen: loest der Name auf, antwortet
+        etwas, und ist das wirklich Proxfy. Der haeufigste Fehler ist ein Proxy,
+        der auf den falschen Rechner zeigt - dann antwortet zwar etwas, aber
+        eben eine fremde Anwendung.
+        """
+        url = aussenadresse.pruefe(body.get("public_url") or self.cfg.public_url)
+        if not url:
+            return {"ok": False, "message": "Keine Aussenadresse eingetragen."}
+
+        ctx = ssl.create_default_context()
+        if body.get("insecure"):
+            # Ein Zertifikat, dem der Container nicht traut, sagt nichts
+            # darueber, ob der Proxy richtig zeigt. Auf Wunsch trotzdem messen.
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        anfrage = urllib.request.Request(url + "/api/me", method="GET")
+        try:
+            with urllib.request.urlopen(anfrage, timeout=10, context=ctx) as antwort:
+                roh = antwort.read(4096)
+                typ = antwort.headers.get("Content-Type", "")
+                code = antwort.status
+        except urllib.error.HTTPError as e:
+            return {"ok": False, "message":
+                    f"{url} antwortet mit {e.code} {e.reason}. Zeigt der Proxy auf "
+                    f"{self.cfg.public_url and 'diesen Container' or 'Port 8099'}?"}
+        except ssl.SSLCertVerificationError as e:
+            return {"ok": False, "zertifikat": True, "message":
+                    f"Das Zertifikat von {url} wird nicht anerkannt: {e.verify_message}. "
+                    "Bei einem selbst ausgestellten Zertifikat ist das erwartbar."}
+        except Exception as e:
+            return {"ok": False, "message": f"{url} nicht erreichbar: {e}"}
+
+        try:
+            daten = json.loads(roh)
+        except Exception:
+            return {"ok": False, "message":
+                    f"{url} antwortet mit {code}, aber nicht mit Proxfy "
+                    f"(Inhaltstyp {typ or 'unbekannt'}). Der Proxy zeigt woanders hin."}
+        if "authenticated" not in daten:
+            return {"ok": False, "message":
+                    f"{url} antwortet, aber nicht wie Proxfy. Der Proxy zeigt woanders hin."}
+        return {"ok": True, "message":
+                f"{url} erreicht Proxfy. Der Weg ueber den Proxy steht."}
+
     def _einstellungen_speichern(self, body: dict) -> dict:
         ident = self.identity()
         authmod.mindestens(ident, "super")
@@ -240,6 +291,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if gruppe in self.PASSWORT_NOETIG:
             self._passwort_pruefen(body)
+
+        if "public_url" in werte or "secure_cookies" in werte:
+            werte["public_url"] = aussenadresse.pruefe(werte["public_url"])
 
         if gruppe == "proxmox":
             # Ohne bestandene Pruefung wird nicht gespeichert.
@@ -257,6 +311,10 @@ class Handler(BaseHTTPRequestHandler):
         self.guard.schwellen(self.cfg)
 
         antwort = {"gespeichert": sorted(werte), "ruecknahme": None}
+        if "public_url" in werte or "secure_cookies" in werte:
+            # Der Anmeldedienst liest auth.env nur beim Start.
+            aussenadresse.angleichen(self.cfg.auth.env_file, self.cfg.public_url,
+                                     self.cfg.secure_cookies)
         if gruppe == "zugriff":
             # Diese Gruppe kann aussperren - Frist setzen.
             self.store.arm_rollback(vorher, 10, ident.email)
@@ -277,6 +335,9 @@ class Handler(BaseHTTPRequestHandler):
             return {"bestaetigt": True}
         self.store.set_settings(offen["vorher"], ident.email)
         self.cfg.anwenden(offen["vorher"])
+        if "public_url" in offen["vorher"]:
+            aussenadresse.angleichen(self.cfg.auth.env_file, self.cfg.public_url,
+                                     self.cfg.secure_cookies)
         self.store.clear_rollback()
         self.log_error_line(f"[Einstellungen] {ident.email} nimmt die Aenderung zurueck")
         return {"zurueckgenommen": True}
@@ -461,6 +522,9 @@ class Handler(BaseHTTPRequestHandler):
 
             if u.path == "/api/settings":
                 return self._json(self._einstellungen_speichern(body))
+            if u.path == "/api/settings/proxy":
+                authmod.mindestens(self.identity(), "super")
+                return self._json(self._proxy_pruefen(body))
             if u.path == "/api/settings/test":
                 authmod.mindestens(self.identity(), "super")
                 return self._json(self._verbindung_pruefen(body))
@@ -688,6 +752,16 @@ def serve(cfg: Config, db_path: str, bind: str = "0.0.0.0", port: int = 8099) ->
     # Werte aus der Datenbank ueber die aus der Datei legen.
     cfg.anwenden(store.get_settings())
 
+    # auth.env in Einklang mit der eingestellten Aussenadresse bringen. Noetig,
+    # weil der Anmeldedienst diese Datei nur beim Start liest - und weil ein
+    # "config reset" auf der Kommandozeile sonst nur halb wirken wuerde.
+    try:
+        if aussenadresse.angleichen(cfg.auth.env_file, cfg.public_url, cfg.secure_cookies):
+            print(f"[Start] auth.env an {cfg.public_url or 'die eigene Adresse'} angepasst",
+                  flush=True)
+    except Exception as e:
+        print(f"[Start] Aussenadresse nicht angeglichen: {e}", flush=True)
+
     # Anmeldedienst anbinden. Ohne ihn startet nichts - eine Oberflaeche, die
     # aus Versehen ohne Anmeldung laeuft, waere schlimmer als gar keine.
     env = authmod.load_env(cfg.auth.env_file)
@@ -698,10 +772,18 @@ def serve(cfg: Config, db_path: str, bind: str = "0.0.0.0", port: int = 8099) ->
             "Ohne dieses Geheimnis kann die Anmeldung nicht geprueft werden.")
     client = authmod.AuthClient(
         f"http://127.0.0.1:{env.get('PROXFY_AUTH_PORT', cfg.auth.port)}", secret)
-    try:
-        setup = client.needs_setup()
-    except authmod.AuthError as e:
-        raise SystemExit(f"Anmeldedienst nicht erreichbar: {e}")
+    # Der Anmeldedienst braucht nach einem Neustart ein paar Sekunden - und
+    # genau eben hat Proxfy ihn womoeglich selbst neu gestartet, weil sich die
+    # Aussenadresse geaendert hat. Erst nach mehreren vergeblichen Versuchen
+    # ist er wirklich weg.
+    for versuch in range(15):
+        try:
+            setup = client.needs_setup()
+            break
+        except authmod.AuthError as e:
+            if versuch == 14:
+                raise SystemExit(f"Anmeldedienst nicht erreichbar: {e}")
+            time.sleep(1)
 
     manager = JobManager(host, cfg, store)
     Handler.manager = manager

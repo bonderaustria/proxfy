@@ -114,6 +114,98 @@ PROXFY_NEU=1 PROXFY_IP=192.168.1.51/24 PROXFY_GW=192.168.1.1 \
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/bonderaustria/proxfy/main/proxfy.sh)"
 ```
 
+
+## Hinter einem Reverse Proxy
+
+Proxfy im Internet erreichbar zu machen heißt: der Proxy nimmt die Verbindung
+entgegen, beendet TLS und reicht sie an Port 8099 weiter. Damit das trägt, sind
+zwei Seiten einzustellen — der Proxy und Proxfy selbst.
+
+### Warum es ohne Einstellung nicht geht
+
+Der Anmeldedienst prüft, woher eine Anfrage kommt. Steht ein Proxy davor,
+kommt sie mit dessen Adresse an — `https://verify.example.org` statt
+`http://192.168.1.35:8099`. Diese Adresse kennt Proxfy zunächst nicht und weist
+sie ab:
+
+```
+{"message":"Invalid origin","code":"INVALID_ORIGIN"}
+```
+
+Das ist kein Fehler, sondern der Schutz, der verhindert, dass eine fremde Seite
+im Namen einer angemeldeten Person Anfragen stellt. Er braucht nur die
+Information, welche Adresse legitim ist.
+
+### 1. Im Nginx Proxy Manager
+
+**Hosts → Proxy Hosts → Add Proxy Host**, Reiter *Details*:
+
+| Feld | Wert |
+|---|---|
+| Domain Names | `verify.example.org` |
+| Scheme | `http` |
+| Forward Hostname / IP | Adresse des Proxfy-Containers |
+| Forward Port | `8099` |
+| Cache Assets | aus |
+| Block Common Exploits | an |
+| Websockets Support | an |
+
+Reiter *SSL*: ein Zertifikat wählen, **Force SSL** und **HTTP/2 Support** an.
+
+Reiter *Advanced* — dieser Block ist der entscheidende Teil:
+
+```nginx
+proxy_buffering off;
+proxy_cache off;
+proxy_read_timeout 3600s;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+
+`proxy_buffering off` ist nicht optional. Proxfy schickt das Protokoll eines
+laufenden Tests als fortlaufenden Datenstrom (Server-Sent Events). Mit
+Pufferung sammelt Nginx diesen Strom und gibt ihn erst am Ende heraus — die
+Oberfläche wirkt dann eingefroren, obwohl der Lauf normal weiterläuft.
+`proxy_read_timeout` muss länger sein als der längste Lauf, sonst bricht die
+Verbindung mitten in einer Wiederherstellung ab.
+
+### 2. In Proxfy
+
+**Einstellungen → Zugriff und Netzwerk**:
+
+- **Adresse von außen** — genau die Adresse, unter der der Browser Proxfy
+  sieht, mit Schema und ohne Pfad: `https://verify.example.org`. Proxfy trägt
+  sie in `auth.env` ein und startet den Anmeldedienst neu; die eigene Adresse im
+  Netz bleibt daneben erlaubt.
+- **Hinter einem Reverse Proxy betreiben** — Proxfy liest dann die echte
+  Herkunftsadresse aus `X-Forwarded-For`. Ohne das sähe die Anmeldesperre nur
+  die Adresse des Proxys und würde bei einem Fehlversuch alle aussperren.
+- **Sitzungscookie nur über HTTPS** — richtig, sobald Proxfy aus dem Internet
+  erreichbar ist. Danach kommst du **nur noch über den Proxy** hinein: der
+  Browser gibt das Cookie über `http://` dann nicht mehr heraus. Erst
+  einschalten, wenn der Weg über den Proxy nachweislich steht.
+
+Die Schaltfläche **Weg über den Proxy prüfen** ruft die eingetragene Adresse auf
+und sagt, was zurückkam. Antwortet etwas anderes als Proxfy, zeigt der Proxy auf
+den falschen Rechner.
+
+### Wenn es nicht geht
+
+| Bild | Ursache |
+|---|---|
+| `Invalid origin` bei der Anmeldung | Adresse von außen fehlt oder weicht ab — Schema, Name und Port müssen exakt dem entsprechen, was in der Adresszeile steht |
+| Anmeldung scheitert wortlos, Cookie fehlt | „Sitzungscookie nur über HTTPS" ist an, der Aufruf lief aber über `http://` |
+| Protokoll eines Laufs bleibt stehen | `proxy_buffering off` fehlt |
+| Verbindung bricht nach einigen Minuten ab | `proxy_read_timeout` zu kurz |
+| Sperre nach einem Fehlversuch trifft alle | „Hinter einem Reverse Proxy betreiben" ist aus |
+| Prüfung meldet „nicht erreichbar", von außen geht es | Der Container kommt nicht an die öffentliche Adresse (kein NAT-Loopback). Kein Fehler von Proxfy |
+| 502 vom Proxy | Falsche Ziel-Adresse oder falscher Port, oder der Dienst läuft nicht: `systemctl status proxfy` |
+
+Aussperren kann man sich damit nicht dauerhaft: die Gruppe merkt sich den
+vorherigen Stand und stellt ihn wieder her, wenn die Änderung nicht binnen zehn
+Minuten bestätigt wird. Und `proxfy config reset` auf der Kommandozeile des
+Containers räumt jede in der Oberfläche gemachte Einstellung weg.
+
 ## Aufbau
 
 Proxfy läuft in einem eigenen LXC, nicht auf dem Hypervisor — dort ist Python
