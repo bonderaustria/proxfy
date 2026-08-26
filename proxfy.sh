@@ -111,29 +111,6 @@ if [ "${PROXFY_UNATTENDED:-0}" != "1" ]; then
     echo
 fi
 
-# --- Trockenlauf ---------------------------------------------------------------
-if [ "${PROXFY_DRY_RUN:-0}" = "1" ]; then
-    schritt "Trockenlauf - es wird nichts angelegt"
-    hinweis "Naechste freie Container-ID laut Proxmox: $VMID_VORGABE"
-    hinweis "Erkannte Bridge:  $BRIDGE_VORGABE"
-    hinweis "Erkannter Storage: $STORAGE_VORGABE"
-    hinweis "Erkanntes Gateway: $GW_VORGABE"
-    if pvesm status --content backup >/dev/null 2>&1; then
-        hinweis "Backup-Storages:   $(pvesm status --content backup 2>/dev/null | awk 'NR>1 {printf "%s ", $1}')"
-    fi
-    if pct status "$VMID" >/dev/null 2>&1 || qm status "$VMID" >/dev/null 2>&1; then
-        warnung "Container-ID $VMID ist bereits vergeben."
-    else
-        hinweis "Container-ID $VMID ist frei."
-    fi
-    if ping -c 1 -W 2 "$BARE_IP" >/dev/null 2>&1; then
-        warnung "$BARE_IP antwortet auf Ping - die Adresse ist belegt."
-    else
-        hinweis "$BARE_IP antwortet nicht - sieht frei aus."
-    fi
-    echo
-    exit 0
-fi
 
 # --- Quelle holen ------------------------------------------------------------
 ARBEIT=$(mktemp -d /tmp/proxfy-download-XXXXXX)
@@ -155,6 +132,31 @@ else
     [ -n "$QUELLE" ] || abbruch "Das Archiv sieht unerwartet aus."
 fi
 [ -f "$QUELLE/create-lxc.sh" ] || abbruch "create-lxc.sh fehlt in der Quelle."
+
+# --- Trockenlauf ---------------------------------------------------------------
+if [ "${PROXFY_DRY_RUN:-0}" = "1" ]; then
+    schritt "Trockenlauf - es wird nichts angelegt"
+    hinweis "Quelle geladen und vollstaendig: $QUELLE"
+    hinweis "Naechste freie Container-ID laut Proxmox: $VMID_VORGABE"
+    hinweis "Erkannte Bridge:  $BRIDGE_VORGABE"
+    hinweis "Erkannter Storage: $STORAGE_VORGABE"
+    hinweis "Erkanntes Gateway: $GW_VORGABE"
+    if pvesm status --content backup >/dev/null 2>&1; then
+        hinweis "Backup-Storages:   $(pvesm status --content backup 2>/dev/null | awk 'NR>1 {printf "%s ", $1}')"
+    fi
+    if pct status "$VMID" >/dev/null 2>&1 || qm status "$VMID" >/dev/null 2>&1; then
+        warnung "Container-ID $VMID ist bereits vergeben."
+    else
+        hinweis "Container-ID $VMID ist frei."
+    fi
+    if ping -c 1 -W 2 "$BARE_IP" >/dev/null 2>&1; then
+        warnung "$BARE_IP antwortet auf Ping - die Adresse ist belegt."
+    else
+        hinweis "$BARE_IP antwortet nicht - sieht frei aus."
+    fi
+    echo
+    exit 0
+fi
 
 # --- Einrichten --------------------------------------------------------------
 schritt "Container anlegen und Proxfy installieren"
