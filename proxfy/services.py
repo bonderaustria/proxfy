@@ -28,11 +28,16 @@ def now() -> dt.datetime:
 class JobManager:
     """Warteschlange plus Arbeiter.
 
-    Bewusst nur EIN Lauf gleichzeitig: parallele Restores wuerden sich um
-    Storage-Bandbreite und Scratch-Slots streiten, und die Ausgabe waere im
-    Live-Protokoll nicht mehr zuzuordnen. Eine Mehrfachauswahl in der
-    Oberflaeche stellt daher N Auftraege in die Schlange, statt N Laeufe
-    gleichzeitig zu starten.
+    Wie viele Laeufe gleichzeitig laufen duerfen, steht in den Einstellungen.
+    Die Vorgabe ist einer - parallele Restores teilen sich die Bandbreite des
+    Storage, und zwei Laeufe brauchen doppelt so lange wie einer allein, wenn
+    das Storage der Engpass ist. Wer schnelles NVMe hat, stellt hoeher.
+
+    Drei Dinge duerfen sich dabei nicht in die Quere kommen, und alle drei sind
+    hier abgesichert: die Vergabe der Scratch-VMID, die Vergabe der
+    Test-Adresse und das Live-Protokoll. Die ersten beiden werden angemeldet,
+    bevor sie in der Wirklichkeit stehen; das Protokoll bekommt je Lauf einen
+    eigenen Puffer und traegt die VMID vor jeder Zeile.
     """
 
     def __init__(self, host: Host, cfg: Config, store: Store):
@@ -40,18 +45,55 @@ class JobManager:
         self._lock = threading.Lock()
         self._q: queue.Queue = queue.Queue()
         self._pending: list[dict] = []
-        self.current: dict | None = None
+        self._laufend: dict[int, dict] = {}      # Gast-VMID -> Beschreibung
         self._listeners: list[queue.Queue] = []
-        self._buffer: list[str] = []
-        threading.Thread(target=self._worker, daemon=True).start()
+        self._buffer: list[str] = []             # gemeinsames Protokoll
+        # Angemeldet, aber noch nicht in der Wirklichkeit: solange darf sie
+        # kein zweiter Lauf nehmen.
+        self._scratch_vergeben: set[int] = set()
+        self._ips_vergeben: set[str] = set()
+        self._arbeiter: list[threading.Thread] = []
+        self._arbeiter_starten()
+
+    def parallel_anpassen(self) -> int:
+        """Nach einer Aenderung der Einstellung aufrufen. Gibt die Zahl zurueck."""
+        self._arbeiter_starten()
+        with self._lock:
+            return len(self._arbeiter)
+
+    def _arbeiter_starten(self) -> None:
+        """Startet fehlende Arbeiter. Die Zahl darf im Betrieb wachsen.
+
+        Verringern laesst sie sich nicht im laufenden Betrieb: ein Arbeiter, der
+        gerade einen Restore begleitet, waere mitten darin abzubrechen. Die
+        kleinere Zahl greift nach einem Neustart des Dienstes.
+        """
+        soll = max(1, min(int(getattr(self.cfg, "max_parallel", 1) or 1), 8))
+        with self._lock:
+            fehlend = soll - len(self._arbeiter)
+        for _ in range(max(0, fehlend)):
+            t = threading.Thread(target=self._worker, daemon=True)
+            with self._lock:
+                self._arbeiter.append(t)
+            t.start()
 
     @property
     def busy(self) -> bool:
-        return self.current is not None
+        return bool(self._laufend)
+
+    @property
+    def current(self) -> dict | None:
+        """Der aelteste laufende Auftrag. Fuer Aufrufer, die nur einen kennen."""
+        with self._lock:
+            return next(iter(self._laufend.values()), None)
 
     def state(self) -> dict:
         with self._lock:
-            return {"busy": self.current is not None, "current": self.current,
+            laufend = list(self._laufend.values())
+            return {"busy": bool(laufend),
+                    "current": laufend[0] if laufend else None,
+                    "laufend": laufend,
+                    "parallel": len(self._arbeiter),
                     "pending": list(self._pending)}
 
     # --- Live-Protokoll ------------------------------------------------------
@@ -67,8 +109,13 @@ class JobManager:
             if q in self._listeners:
                 self._listeners.remove(q)
 
-    def emit(self, line) -> None:
+    def emit(self, line, vmid=None) -> None:
         text = str(line)
+        # Bei mehreren gleichzeitigen Laeufen waere sonst nicht zu erkennen,
+        # wozu eine Zeile gehoert. Meldungen an die Oberflaeche (@@) bleiben
+        # unangetastet - die werden ausgewertet, nicht gelesen.
+        if vmid is not None and not text.startswith("@@") and len(self._laufend) > 1:
+            text = f"[{vmid}] {text}"
         with self._lock:
             self._buffer.append(text)
             if len(self._buffer) > 4000:
@@ -99,25 +146,53 @@ class JobManager:
         while True:
             item = self._q.get()
             source = item.pop("_source", "manuell")
+            vmid = item.get("vmid")
             with self._lock:
                 if self._pending:
                     self._pending.pop(0)
-                self.current = {"vmid": item.get("vmid"), "mode": item.get("mode", "isolated"),
-                                "keep": item.get("keep", "destroy"), "source": source}
-                self._buffer = []
+                self._laufend[vmid] = {
+                    "vmid": vmid, "mode": item.get("mode", "isolated"),
+                    "keep": item.get("keep", "destroy"), "source": source}
+                # Nur wenn dies der einzige Lauf ist, faengt das Protokoll neu
+                # an. Sonst wuerde ein hinzukommender Lauf die Ausgabe der
+                # bereits laufenden wegwischen.
+                if len(self._laufend) == 1:
+                    self._buffer = []
             try:
                 self._run_one(item, source)
             except Exception:
-                self.emit("!! Unerwarteter Fehler:\n" + traceback.format_exc())
-                self.emit("@@DONE@@" + json.dumps({"verdict": "ABGEBROCHEN"}))
+                self.emit("!! Unerwarteter Fehler:\n" + traceback.format_exc(), vmid)
+                self.emit("@@DONE@@" + json.dumps({"verdict": "ABGEBROCHEN"}), vmid)
             finally:
                 with self._lock:
-                    self.current = None
+                    self._laufend.pop(vmid, None)
+                    self._scratch_vergeben.discard(item.get("_scratch"))
+                    self._ips_vergeben.discard(item.get("_ip"))
                 self._q.task_done()
 
+    def _vergabe(self, target: dict, **was):
+        """Meldet an, was ein Lauf beansprucht, bevor es in der Welt steht."""
+        with self._lock:
+            if was.get("fragen"):
+                return set(self._scratch_vergeben)
+            if "scratch" in was:
+                self._scratch_vergeben.add(int(was["scratch"]))
+                target["_scratch"] = int(was["scratch"])
+            if "ip" in was and was["ip"]:
+                self._ips_vergeben.add(str(was["ip"]).split("/")[0])
+                target["_ip"] = str(was["ip"]).split("/")[0]
+        return None
+
     def _run_one(self, target: dict, source: str) -> None:
-        runner = Runner(self.host, self.cfg, log=self.emit,
-                        reserved_ips=self.store.leased_ips())
+        vmid = target.get("vmid")
+        with self._lock:
+            # Adressen laufender Testgaeste plus die, die ein gleichzeitiger
+            # Lauf gerade fuer sich angemeldet hat.
+            belegt = set(self.store.leased_ips()) | set(self._ips_vergeben)
+        runner = Runner(self.host, self.cfg,
+                        log=lambda z: self.emit(z, vmid),
+                        reserved_ips=belegt,
+                        reserviere=lambda **w: self._vergabe(target, **w))
         report = runner.run(target)
         payload = dataclasses.asdict(report)
         payload["verdict"] = report.verdict

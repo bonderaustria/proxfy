@@ -429,3 +429,10 @@ Object.assign(EN, {
   "Rolle auf „": "Change role to “",
   "“ ändern?": "”?",
 });
+
+// --- Gleichzeitige Laeufe ----------------------------------------------------
+Object.assign(EN, {
+  "Gleichzeitige Läufe": "Concurrent runs",
+  "Wie viele Gäste gleichzeitig geprüft werden dürfen. Eins ist die sichere Wahl: parallele Wiederherstellungen teilen sich die Bandbreite des Storage, und ist die der Engpass, dauern zwei zusammen genauso lange wie nacheinander. Bei schnellem NVMe lohnt höher. Eine Verringerung greift erst nach einem Neustart des Dienstes.":
+    "How many guests may be verified at the same time. One is the safe choice: parallel restores share the storage bandwidth, and if that is the bottleneck, two together take just as long as one after the other. With fast NVMe, higher pays off. Lowering it takes effect after the service restarts.",
+});

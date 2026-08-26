@@ -137,9 +137,15 @@ def list_guests(host: Host) -> list[dict]:
     return sorted(guests, key=lambda g: g["vmid"])
 
 
-def pick_scratch_vmid(host: Host, lo: int, hi: int) -> int:
-    """Freie VMID aus dem Scratch-Bereich. Nie eine produktive ID."""
-    used = set()
+def pick_scratch_vmid(host: Host, lo: int, hi: int, vergeben=()) -> int:
+    """Freie VMID aus dem Scratch-Bereich. Nie eine produktive ID.
+
+    'vergeben' sind IDs, die ein anderer Lauf gerade fuer sich beansprucht, aber
+    noch nicht angelegt hat. Ohne die griffen zwei gleichzeitige Laeufe nach
+    derselben Nummer - der zweite Restore liefe dann in eine bestehende
+    Konfiguration.
+    """
+    used = set(int(v) for v in vergeben)
     r = host.sh("ls /etc/pve/qemu-server /etc/pve/lxc 2>/dev/null")
     for name in r.out.split():
         m = re.match(r"^(\d+)\.conf$", name)

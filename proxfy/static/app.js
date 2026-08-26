@@ -1486,6 +1486,7 @@ async function loadEinstellungen() {
     setzeWert("pm-agent", w["restore.agent_timeout"]);
     setzeWert("pm-keep", w["default_keep"]);
     setzeWert("pm-ttl", w["default_ttl"]);
+    setzeWert("pm-parallel", w["max_parallel"]);
 
     // Zugriff
     const fwd = $("pm-fwd");
@@ -1604,6 +1605,7 @@ $("btn-def-save").onclick = () => {
     "restore.agent_timeout": Number($("pm-agent").value),
     "default_keep": $("pm-keep").value,
     "default_ttl": Number($("pm-ttl").value),
+    "max_parallel": Number($("pm-parallel").value),
   }, "def-out");
 };
 

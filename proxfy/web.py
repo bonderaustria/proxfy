@@ -226,7 +226,7 @@ class Handler(BaseHTTPRequestHandler):
         "defaults": ("restore.backup_storage", "restore.target_storage",
                      "restore.isolated_bridge", "restore.lan_bridge",
                      "restore.boot_timeout", "restore.agent_timeout",
-                     "default_keep", "default_ttl"),
+                     "default_keep", "default_ttl", "max_parallel"),
         "proxmox": ("host.host", "host.user", "host.key_file"),
         "zugriff": ("trust_forwarded_for", "public_url", "secure_cookies"),
         "sperre": ("delay_from", "lock_from", "lock_minutes"),
@@ -352,7 +352,19 @@ class Handler(BaseHTTPRequestHandler):
         # Die Sperr-Schwellen wirken sofort im Waechter.
         self.guard.schwellen(self.cfg)
 
+        # Mehr gleichzeitige Laeufe greifen sofort. Weniger erst nach einem
+        # Neustart - ein Arbeiter mitten in einem Restore laesst sich nicht
+        # abbrechen, ohne einen halb wiederhergestellten Gast zu hinterlassen.
+        if "max_parallel" in werte:
+            n = self.manager.parallel_anpassen()
+            antwort_hinweis = (None if n >= int(self.cfg.max_parallel)
+                               else "Die Verringerung greift nach einem Neustart des Dienstes.")
+        else:
+            antwort_hinweis = None
+
         antwort = {"gespeichert": sorted(werte), "ruecknahme": None}
+        if antwort_hinweis:
+            antwort["hinweis"] = antwort_hinweis
         if "public_url" in werte or "secure_cookies" in werte:
             # Der Anmeldedienst liest auth.env nur beim Start.
             aussenadresse.angleichen(self.cfg.auth.env_file, self.cfg.public_url,

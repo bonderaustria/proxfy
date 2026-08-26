@@ -544,6 +544,13 @@ body[data-role="user"] .nur-admin{display:none !important}
             <div><label>Scratch-Bereich</label><input id="pm-scratch" class="mono" readonly></div>
           </div>
           <div class="grid2" style="margin-top:14px">
+            <div><label for="pm-parallel">Gleichzeitige L&auml;ufe</label>
+              <input class="mono" id="pm-parallel" type="number" min="1" max="8" step="1">
+              <div class="hint">Wie viele Gäste gleichzeitig gepr&uuml;ft werden d&uuml;rfen.
+                Eins ist die sichere Wahl: parallele Wiederherstellungen teilen sich die
+                Bandbreite des Storage, und ist die der Engpass, dauern zwei zusammen
+                genauso lange wie nacheinander. Bei schnellem NVMe lohnt h&ouml;her.
+                Eine Verringerung greift erst nach einem Neustart des Dienstes.</div></div>
             <div><label for="pm-keep">Voreingestellte Lebensdauer</label>
               <select id="pm-keep">
                 <option value="destroy">sofort vernichten</option>

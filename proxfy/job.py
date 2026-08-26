@@ -77,11 +77,16 @@ class JobReport:
 
 
 class Runner:
-    def __init__(self, host: Host, cfg: Config, log=print, reserved_ips=None):
+    def __init__(self, host: Host, cfg: Config, log=print, reserved_ips=None,
+                 reserviere=None):
         self.host, self.cfg, self.log = host, cfg, log
         # Adressen, die bereits von lebenden Testgaesten belegt sind. Der
         # Preflight allein sieht sie nicht, wenn der Gast gerade nicht antwortet.
         self.reserved_ips = set(reserved_ips or ())
+        # Rueckruf, mit dem der Lauf seine Scratch-VMID und seine Adresse
+        # anmeldet, solange beides noch nicht in der Wirklichkeit steht.
+        # Ohne ihn (Kommandozeile) laeuft ohnehin nur einer.
+        self.reserviere = reserviere or (lambda **_: None)
 
     @contextlib.contextmanager
     def _phase(self, report: JobReport, name: str):
@@ -189,7 +194,9 @@ class Runner:
                 p["d"] = f"MAC {plan.mac}, Start an {self.cfg.restore.isolated_bridge}"
 
             with self._phase(report, "Wiederherstellen") as p:
-                scratch = pve.pick_scratch_vmid(host, SCRATCH_VMID_MIN, SCRATCH_VMID_MAX)
+                scratch = pve.pick_scratch_vmid(host, SCRATCH_VMID_MIN, SCRATCH_VMID_MAX,
+                                                vergeben=self.reserviere(fragen=True))
+                self.reserviere(scratch=scratch)
                 report.scratch_vmid = scratch
                 r = pve.restore(host, snap, scratch, target_storage)
                 if not r.ok:

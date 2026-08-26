@@ -101,6 +101,11 @@ class Config:
     # und keine Folge der Aussenadresse.
     secure_cookies: bool = False
 
+    # Wie viele Laeufe gleichzeitig. Vorgabe eins: parallele Restores teilen
+    # sich die Bandbreite des Storage, und wenn die der Engpass ist, dauern
+    # zwei Laeufe zusammen genauso lange wie nacheinander.
+    max_parallel: int = 1
+
     # Voreinstellungen fuer neue Laeufe, in der Oberflaeche aenderbar.
     default_keep: str = "destroy"
     default_ttl: int = 60
@@ -141,6 +146,7 @@ class Config:
             "restore.lan_bridge": self.restore.lan_bridge,
             "restore.boot_timeout": self.restore.boot_timeout,
             "restore.agent_timeout": self.restore.agent_timeout,
+            "max_parallel": self.max_parallel,
             "default_keep": self.default_keep,
             "default_ttl": self.default_ttl,
             "public_url": self.public_url,
