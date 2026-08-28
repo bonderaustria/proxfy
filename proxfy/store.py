@@ -158,6 +158,10 @@ class Store:
         self._lock = threading.Lock()
         db.sicherstellen(self.dsn)
         with self._conn() as c:
+            # Mehrere Anweisungen in einem Aufruf gehen nur OHNE Parameter:
+            # psycopg bindet serverseitig, und dabei ist genau ein Befehl je
+            # Aufruf erlaubt. Kaeme je ein Platzhalter ins Schema, scheiterte
+            # das mit einem Syntaxfehler an unerwarteter Stelle.
             c.execute(_SCHEMA)
             # Nachtraeglich ergaenzte Spalten vertragen kein CREATE TABLE mehr.
             cols = _spalten(c, "jobs")

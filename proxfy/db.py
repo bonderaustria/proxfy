@@ -116,5 +116,12 @@ def sicherstellen(dsn: str) -> None:
             name = teile.pop("dbname", "proxfy")
             verwaltung = psycopg.conninfo.make_conninfo(dbname="postgres", **teile)
             with psycopg.connect(verwaltung, autocommit=True) as c:
-                c.execute(f'CREATE DATABASE "{name}"')
+                # Kodierung ausdruecklich: ohne Angabe erbt die neue Datenbank
+                # die des Clusters, und auf einem Container ohne gesetzte
+                # Spracheinstellung ist das SQL_ASCII. Darin liegen Texte als
+                # rohe Bytes - Sortierung und Gross-/Kleinschreibung gehen dann
+                # bei Umlauten daneben, und ungueltige Folgen fallen nicht auf.
+                bezeichner = chr(34) + name.replace(chr(34), chr(34) * 2) + chr(34)
+                c.execute(f"CREATE DATABASE {bezeichner} ENCODING 'UTF8' "
+                          "TEMPLATE template0 LC_COLLATE 'C' LC_CTYPE 'C'")
         _ANGELEGT.add(dsn)
